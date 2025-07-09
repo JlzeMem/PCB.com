@@ -1,0 +1,1292 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>E2S PCB Search App</title>
+    <!-- Load Tailwind CSS from CDN for modern styling -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Load html2pdf.js for PDF generation functionality -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+
+    <style>
+        /* Custom styles for the Inter font, ensuring a clean and modern look */
+        body {
+            font-family: 'Inter', sans-serif;
+            overflow-x: hidden; /* Prevents horizontal scrollbar when sidebar is open */
+            background: linear-gradient(to bottom right, #60a5fa, #a78bfa); /* A pleasant blue/purple gradient background */
+        }
+
+        /* Styles for the sidebar menu */
+        .sidebar {
+            width: 250px; /* Fixed width for the sidebar */
+            transform: translateX(-250px); /* Initially hidden off-screen to the left */
+            transition: transform 0.3s ease-in-out; /* Smooth slide-in/out transition */
+            z-index: 1000; /* Ensures the sidebar appears above other content */
+        }
+
+        /* Class to open the sidebar, moving it into view */
+        .sidebar.open {
+            transform: translateX(0);
+        }
+
+        /* Overlay that appears when the sidebar is open to dim the main content and allow closing on click */
+        .overlay {
+            display: none; /* Hidden by default */
+            background-color: rgba(0, 0, 0, 0.5); /* Semi-transparent black */
+            z-index: 999; /* Below the sidebar but above main content */
+        }
+
+        /* Class to activate (show) the overlay */
+        .overlay.active {
+            display: block;
+        }
+
+        /* Animation for the main content to shift when the sidebar opens, creating a push effect */
+        .content-shifted {
+            transform: translateX(250px); /* Shifts content to the right by sidebar width */
+        }
+
+        /* Styles for zoomable images (used in picture display and search results) */
+        .zoomable-image {
+            cursor: zoom-in; /* Indicates the image is clickable for zooming */
+            transition: transform 0.2s ease-in-out; /* Smooth zoom transition */
+        }
+
+        /* Class to apply when an image is zoomed */
+        .zoomable-image.zoomed {
+            transform: scale(1.5); /* Zooms the image to 150% of its size */
+            cursor: zoom-out; /* Indicates the image can be clicked again to zoom out */
+        }
+
+        /* Specific styling for the home section to ensure proper layout and background */
+        #homeSection {
+            position: static; /* Standard positioning */
+            overflow: visible; /* Allows content to overflow if needed */
+            padding: 2rem; /* Padding around the content */
+            background-color: transparent; /* Transparent background to show body gradient */
+        }
+    </style>
+</head>
+<body class="min-h-screen flex flex-col items-center justify-center p-4 relative">
+
+    <!-- Menu Button (Hamburger Icon) - fixed at top-left for easy access -->
+    <button id="menuButton" class="absolute top-4 left-4 bg-white p-3 rounded-full shadow-lg z-20 focus:outline-none focus:ring-2 focus:ring-blue-500">
+        <svg class="w-6 h-6 text-gray-800" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"></path>
+        </svg>
+    </button>
+
+    <!-- Sidebar Menu - slides in from the left -->
+    <div id="sidebar" class="sidebar fixed top-0 left-0 h-full bg-gray-800 text-white p-6 shadow-xl">
+        <h2 class="text-2xl font-bold mb-6">Menu</h2>
+        <nav>
+            <ul>
+                <!-- Navigation links for different sections of the app -->
+                <li class="mb-4"><a href="#" id="homeMenuItem" class="text-lg hover:text-blue-300 transition duration-200">Home</a></li>
+                <li class="mb-4"><a href="#" id="addPictureMenuItem" class="text-lg hover:text-blue-300 transition duration-200">Add Picture</a></li>
+                <li class="mb-4"><a href="#" id="searchMenuItem" class="text-lg hover:text-blue-300 transition duration-200">Search</a></li>
+                <li class="mb-4"><a href="#" id="databaseMenuItem" class="text-lg hover:text-blue-300 transition duration-200">Database</a></li>
+                <li class="mb-4"><a href="#" id="settingsMenuItem" class="text-lg hover:text-blue-300 transition duration-200">Settings</a></li>
+                <li><a href="#" id="aboutMenuItem" class="text-lg hover:text-blue-300 transition duration-200">About</a></li>
+            </ul>
+        </nav>
+    </div>
+
+    <!-- Overlay to close sidebar on click outside -->
+    <div id="overlay" class="overlay fixed inset-0"></div>
+
+    <!-- Custom Message Box for notifications (e.g., success, error messages) -->
+    <div id="messageBox" class="fixed bottom-4 right-4 bg-gray-800 text-white p-3 rounded-lg shadow-lg z-50 hidden transition-opacity duration-300 opacity-0">
+        This is a message!
+    </div>
+
+    <!-- Main Content Container - holds all sections of the app -->
+    <div id="mainContent" class="transition-transform duration-300 ease-in-out bg-white p-8 rounded-xl shadow-2xl text-center max-w-sm w-full mx-auto">
+        <!-- Home Section - the default view of the app -->
+        <div id="homeSection">
+            <h1 class="text-5xl font-extrabold text-gray-900 mb-4 animate-bounce">
+                E2S PCB Search
+            </h1>
+            <p class="text-lg text-gray-700 mb-6">
+                E2S warning signals for your safety<br>
+                Worldwide availability - global approvals<br>
+                10 year warranty - proven reliability<br>
+                Support and expertise - the solutions you need<br>
+                That's why for over 30 years E2S warning signals have protected lives around the world
+            </p>
+
+            <!-- Image display for the home page. This box is always visible. -->
+            <!-- It displays a placeholder if no custom image is set, or the uploaded image. -->
+            <div class="mb-6 border-2 border-gray-300 rounded-lg p-2 flex justify-center items-center h-48 bg-gray-100">
+                <img id="homePageDisplayImage" class="max-w-full max-h-full object-contain rounded-lg shadow-md" src="https://placehold.co/400x200/cccccc/333333?text=No+Homepage+Image" alt="Homepage Image Placeholder">
+            </div>
+
+            <!-- Homepage Search Button - navigates to the search section -->
+            <button id="homeSearchButton" class="mt-8 bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-6 rounded-lg shadow-lg transform transition duration-300 hover:scale-105">
+                Search
+            </button>
+        </div>
+
+        <!-- Add Picture Section (initially hidden) - for adding new PCB images and details -->
+        <div id="addPictureSection" class="hidden text-left">
+            <h2 id="addPictureTitle" class="text-3xl font-bold text-gray-900 mb-6 text-center">Add New Picture</h2>
+
+            <!-- Image Previews Container - now holds multiple image previews -->
+            <div id="imagePreviewsContainer" class="mb-4 flex flex-wrap justify-center gap-2">
+                <!-- Individual image previews will be added here dynamically -->
+            </div>
+
+            <!-- Input for the picture name -->
+            <div class="mb-4">
+                <label for="pictureNameInput" class="block text-gray-700 text-sm font-bold mb-2">Picture Name:</label>
+                <input type="text" id="pictureNameInput" placeholder="Enter picture name (e.g., D1x_D2x-GROUP)" class="shadow appearance-none border rounded-lg w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline">
+            </div>
+
+            <!-- Input for taking a photo using the device camera - now accepts multiple files -->
+            <div class="mb-4">
+                <label for="cameraInput" class="block text-gray-700 text-sm font-bold mb-2">Take Photo (Camera):</label>
+                <input type="file" id="cameraInput" accept="image/*" capture="camera" multiple class="block w-full text-sm text-gray-900 border border-gray-300 rounded-lg cursor-pointer bg-gray-50 focus:outline-none p-2">
+            </div>
+
+            <!-- Input for selecting an image from the device gallery - now accepts multiple files -->
+            <div class="mb-4">
+                <label for="galleryInput" class="block text-gray-700 text-sm font-bold mb-2">Select from Gallery:</label>
+                <input type="file" id="galleryInput" accept="image/*" multiple class="block w-full text-sm text-gray-900 border border-gray-300 rounded-lg cursor-pointer bg-gray-50 focus:outline-none p-2">
+            </div>
+
+            <!-- Textarea for adding a description to the picture -->
+            <div class="mb-6">
+                <label for="descriptionInput" class="block text-gray-700 text-sm font-bold mb-2">Description:</label>
+                <textarea id="descriptionInput" rows="4" class="shadow appearance-none border rounded-lg w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline resize-none"></textarea>
+            </div>
+
+            <!-- Button to add or save picture details -->
+            <button id="addPictureButton" class="bg-green-600 hover:bg-green-700 text-white font-bold py-3 px-6 rounded-lg shadow-lg transform transition duration-300 hover:scale-105 w-full">
+                Add Picture & Description
+            </button>
+            <!-- Button to cancel an edit operation (initially hidden) -->
+            <button id="cancelEditButton" class="bg-gray-500 hover:bg-gray-600 text-white font-bold py-3 px-6 rounded-lg shadow-lg transform transition duration-300 hover:scale-105 w-full mt-2 hidden">
+                Cancel Edit
+            </button>
+
+            <hr class="my-8 border-t border-gray-300">
+
+            <!-- Area to display a list of all added pictures -->
+            <h3 class="text-2xl font-bold text-gray-900 mb-4 text-center">Added Pictures</h3>
+            <div id="addedPicturesList" class="space-y-6">
+                <!-- Pictures will be dynamically added here by JavaScript -->
+                <p class="text-gray-500 text-center" id="noPicturesMessage">No pictures added yet.</p>
+            </div>
+        </div>
+
+        <!-- Search Section (initially hidden) - for searching through stored pictures -->
+        <div id="searchSection" class="hidden text-left">
+            <h2 class="text-3xl font-bold text-gray-900 mb-6 text-center">Search Pictures</h2>
+
+            <!-- Search input field and button -->
+            <div class="mb-6 flex items-center space-x-2">
+                <input type="text" id="searchQueryInput" placeholder="Enter description to search..." class="flex-grow shadow appearance-none border rounded-lg py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline">
+                <button id="searchButton" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-lg shadow-lg transition duration-300">
+                    Search
+                </button>
+            </div>
+
+            <hr class="my-8 border-t border-gray-300">
+
+            <!-- Area to display search results -->
+            <h3 class="text-2xl font-bold text-gray-900 mb-4 text-center">Search Results</h3>
+            <div id="searchResultsList" class="space-y-6">
+                <!-- Search results will be dynamically added here -->
+                <p class="text-gray-500 text-center" id="noSearchResultsMessage">No search results yet.</p>
+            </div>
+        </div>
+
+        <!-- Database Section (initially hidden) - displays all stored items and PDF options -->
+        <div id="databaseSection" class="hidden text-left relative">
+            <h2 class="text-3xl font-bold text-gray-900 mb-6 text-center">Your Database</h2>
+
+            <!-- Buttons for PDF generation, sharing, and Refresh Database -->
+            <!-- Changed layout to flex-col to stack buttons vertically -->
+            <div class="mb-6 flex flex-col items-center space-y-2">
+                <div class="flex justify-center space-x-4 w-full">
+                    <button id="generatePdfButton" class="bg-purple-600 hover:bg-purple-700 text-white font-bold py-3 px-6 rounded-lg shadow-lg transform transition duration-300 hover:scale-105">
+                        Generate PDF
+                    </button>
+                    <button id="sharePdfButton" class="bg-teal-600 hover:bg-teal-700 text-white font-bold py-3 px-6 rounded-lg shadow-lg transform transition duration-300 hover:scale-105">
+                        Share PDF
+                    </button>
+                </div>
+                <!-- Refresh Database Button - now below PDF buttons and smaller -->
+                <button id="refreshDatabaseButton" class="bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded-lg shadow-md transition duration-300">
+                    Refresh Database
+                </button>
+            </div>
+
+            <hr class="my-8 border-t border-gray-300">
+
+            <!-- Area to display all items stored in the database -->
+            <h3 class="text-2xl font-bold text-gray-900 mb-4 text-center">All Stored Items</h3>
+            <div id="databaseItemsList" class="space-y-6">
+                <!-- Database items will be dynamically added here -->
+                <p class="text-gray-500 text-center" id="noDatabaseItemsMessage">No items in database yet.</p>
+            </div>
+        </div>
+
+        <!-- Settings Section (initially hidden) - for app-wide configurations -->
+        <div id="settingsSection" class="hidden text-left">
+            <h2 class="text-3xl font-bold text-gray-900 mb-6 text-center">Settings</h2>
+
+            <!-- Homepage Image Settings subsection -->
+            <div class="mb-6 p-4 border rounded-lg shadow-sm bg-gray-50">
+                <h3 class="text-xl font-semibold text-gray-800 mb-4">Homepage Image Settings</h3>
+                <div class="mb-4 flex justify-center">
+                    <!-- Settings preview image - always visible with a placeholder -->
+                    <img id="settingsHomePageImagePreview" class="max-w-full h-48 object-contain rounded-lg shadow-md mx-auto" src="https://placehold.co/400x200/cccccc/333333?text=No+Preview" alt="Homepage Image Preview">
+                </div>
+                <label for="homeImageInput" class="block text-gray-700 text-sm font-bold mb-2">Select Image for Homepage:</label>
+                <div class="flex items-center space-x-2">
+                    <input type="file" id="homeImageInput" accept="image/*" class="block w-full text-sm text-gray-900 border border-gray-300 rounded-lg cursor-pointer bg-gray-50 focus:outline-none p-2">
+                    <button id="uploadHomepageImageButton" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-lg shadow-lg transition duration-300" disabled>
+                        Upload
+                    </button>
+                </div>
+            </div>
+
+            <p class="text-gray-700 text-center mt-8">More settings options coming soon!</p>
+        </div>
+
+        <!-- About Information Section (initially hidden) - provides details about the app and E2S products -->
+        <div id="aboutSection" class="hidden text-left">
+            <h2 class="text-3xl font-bold text-gray-900 mb-6 text-center">About This App</h2>
+            <div class="bg-gray-100 p-6 rounded-lg shadow-md text-gray-800">
+                <p class="mb-4">This application is designed to help you manage and search for information related to E2S PCB (Printed Circuit Board) details, including associated pictures and descriptions.</p>
+
+                <h3 class="text-xl font-semibold text-gray-800 mb-2">Product Categories:</h3>
+                <ul class="list-disc list-inside mb-4 pl-4">
+                    <li><strong>Spectra:</strong> Audible & Visual</li>
+                    <li><strong>AlertAlarm:</strong> Audible</li>
+                    <li><strong>AlertAlight:</strong> Audible & Visual</li>
+                    <li><strong>Sonora:</strong> Audible</li>
+                    <li><strong>GPH:</strong> Buzzers</li>
+                    <li><strong>Appello:</strong> User recordable</li>
+                    <li><strong>M:</strong> Heavy industrial</li>
+                    <li><strong>SpectrAlarm:</strong> Audible & Visual</li>
+                    <li><strong>Hootronic:</strong> Sirens, Bells & Buzzers</li>
+                </ul>
+
+                <h3 class="text-xl font-semibold text-gray-800 mb-2">Hazardous Area Classifications:</h3>
+                <ul class="list-disc list-inside mb-4 pl-4">
+                    <li><strong>IS:</strong> CI D1, Zone 0</li>
+                    <li><strong>BEx:</strong> Zone 1, 21</li>
+                    <li><strong>GNEx:</strong> Zone 1, 21</li>
+                    <li><strong>STEx:</strong> Zone 1, 21</li>
+                    <li><strong>D1x:</strong> CI/II D1, Zone 1</li>
+                    <li><strong>D2x:</strong> CI/II D2, Zone 2</li>
+                    <li><strong>E2x:</strong> CI/II D2, Zone 2</li>
+                </ul>
+
+                <p class="text-sm text-gray-600 mt-4">
+                    Version: 1.0<br>
+                    Developed for E2S Warning Signals.
+                </p>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Get references to all necessary DOM elements
+        const menuButton = document.getElementById('menuButton');
+        const sidebar = document.getElementById('sidebar');
+        const overlay = document.getElementById('overlay');
+        const mainContent = document.getElementById('mainContent');
+        const body = document.body;
+
+        const homeSection = document.getElementById('homeSection');
+        const addPictureSection = document.getElementById('addPictureSection');
+        const searchSection = document.getElementById('searchSection');
+        const databaseSection = document.getElementById('databaseSection');
+        const settingsSection = document.getElementById('settingsSection');
+        const aboutSection = document.getElementById('aboutSection');
+
+        // Removed imagePreview as it's replaced by imagePreviewsContainer
+        const imagePreviewsContainer = document.getElementById('imagePreviewsContainer'); // New element for multiple previews
+        const pictureNameInput = document.getElementById('pictureNameInput');
+        const cameraInput = document.getElementById('cameraInput');
+        const galleryInput = document.getElementById('galleryInput');
+        const descriptionInput = document.getElementById('descriptionInput');
+        const addPictureButton = document.getElementById('addPictureButton');
+        const cancelEditButton = document.getElementById('cancelEditButton');
+        const addPictureTitle = document.getElementById('addPictureTitle');
+        const addedPicturesList = document.getElementById('addedPicturesList');
+        const noPicturesMessage = document.getElementById('noPicturesMessage');
+        const messageBox = document.getElementById('messageBox');
+
+        const homePageDisplayImage = document.getElementById('homePageDisplayImage');
+        const settingsHomePageImagePreview = document.getElementById('settingsHomePageImagePreview');
+        const homeImageInput = document.getElementById('homeImageInput');
+        const uploadHomepageImageButton = document.getElementById('uploadHomepageImageButton');
+
+        const searchQueryInput = document.getElementById('searchQueryInput');
+        const searchButton = document.getElementById('searchButton');
+        const searchResultsList = document.getElementById('searchResultsList');
+        const noSearchResultsMessage = document.getElementById('noSearchResultsMessage');
+
+        const homeSearchButton = document.getElementById('homeSearchButton');
+
+        const databaseItemsList = document.getElementById('databaseItemsList');
+        const noDatabaseItemsMessage = document.getElementById('noDatabaseItemsMessage');
+        const generatePdfButton = document.getElementById('generatePdfButton');
+        const sharePdfButton = document.getElementById('sharePdfButton');
+        const refreshDatabaseButton = document.getElementById('refreshDatabaseButton');
+
+        // Global variables to manage app state
+        let addedItems = []; // Stores all PCB data (images, names, descriptions)
+        let currentEditingItemId = null; // Tracks the ID of the item currently being edited
+        let homepageImageData = null; // Stores the base64 data of the custom homepage image
+        let selectedImagesBase64 = []; // NEW: Array to store base64 strings of multiple selected images for 'Add Picture'
+
+        // Define placeholder image URLs for better user experience
+        const HOMEPAGE_PLACEHOLDER_IMAGE = "https://placehold.co/400x200/cccccc/333333?text=No+Homepage+Image";
+        const SETTINGS_PREVIEW_PLACEHOLDER_IMAGE = "https://placehold.co/400x200/cccccc/333333?text=No+Preview";
+
+
+        // --- IndexedDB Setup ---
+        // IndexedDB is used for persistent local storage of application data.
+        const DB_NAME = 'E2SPCBDatabase';
+        const DB_VERSION = 2; // Increment version if schema changes
+        const STORE_NAME_PCB = 'pcb_data'; // Object store for PCB items
+        const STORE_NAME_SETTINGS = 'app_settings'; // Object store for app settings (like homepage image)
+        let db; // Variable to hold the IndexedDB database instance
+
+        /**
+         * Opens the IndexedDB database. If the database or object stores don't exist, they are created.
+         * @returns {Promise<IDBDatabase>} A promise that resolves with the database instance.
+         */
+        function openIndexedDB() {
+            return new Promise((resolve, reject) => {
+                const request = indexedDB.open(DB_NAME, DB_VERSION);
+
+                // This event fires if the database is new or its version is higher than the existing one.
+                request.onupgradeneeded = (event) => {
+                    db = event.target.result;
+                    // Create object store for PCB data if it doesn't exist
+                    if (!db.objectStoreNames.contains(STORE_NAME_PCB)) {
+                        db.createObjectStore(STORE_NAME_PCB, { keyPath: 'id', autoIncrement: true });
+                    }
+                    // Create object store for app settings if it doesn't exist
+                    if (!db.objectStoreNames.contains(STORE_NAME_SETTINGS)) {
+                        db.createObjectStore(STORE_NAME_SETTINGS, { keyPath: 'settingName' });
+                    }
+                };
+
+                // Event fires when the database is successfully opened
+                request.onsuccess = (event) => {
+                    db = event.target.result;
+                    console.log("IndexedDB opened successfully");
+                    resolve(db);
+                };
+
+                // Event fires if there's an error opening the database
+                request.onerror = (event) => {
+                    console.error("IndexedDB error:", event.target.errorCode);
+                    showMessageBox("Error opening local database.", "error");
+                    reject(event.target.errorCode);
+                };
+            });
+        }
+
+        /**
+         * Saves a setting (e.g., homepage image) to the IndexedDB settings store.
+         * @param {string} settingName - The name of the setting to save (e.g., 'homepageImage').
+         * @param {*} value - The value of the setting.
+         */
+        async function saveSettingToIndexedDB(settingName, value) {
+            try {
+                const dbInstance = await openIndexedDB();
+                const transaction = dbInstance.transaction(STORE_NAME_SETTINGS, 'readwrite');
+                const store = transaction.objectStore(STORE_NAME_SETTINGS);
+                const request = store.put({ settingName: settingName, value: value }); // 'put' adds or updates
+
+                request.onsuccess = () => {
+                    console.log(`IndexedDB: Setting '${settingName}' saved.`);
+                };
+
+                request.onerror = (event) => {
+                    console.error(`IndexedDB: Error saving setting '${settingName}':`, event.target.error);
+                };
+            } catch (error) {
+                console.error("IndexedDB operation failed:", error);
+            }
+        }
+
+        /**
+         * Retrieves a setting from the IndexedDB settings store.
+         * @param {string} settingName - The name of the setting to retrieve.
+         * @returns {Promise<*>} A promise that resolves with the setting's value, or null if not found.
+         */
+        async function getSettingFromIndexedDB(settingName) {
+            return new Promise(async (resolve, reject) => {
+                try {
+                    const dbInstance = await openIndexedDB();
+                    const transaction = dbInstance.transaction(STORE_NAME_SETTINGS, 'readonly');
+                    const store = transaction.objectStore(STORE_NAME_SETTINGS);
+                    const request = store.get(settingName);
+
+                    request.onsuccess = () => {
+                        resolve(request.result ? request.result.value : null);
+                    };
+
+                    request.onerror = (event) => {
+                        console.error(`IndexedDB: Error getting setting '${settingName}':`, event.target.error);
+                        reject(event.target.error);
+                    };
+                } catch (error) {
+                    console.error("IndexedDB operation failed:", error);
+                    reject(error);
+                }
+            });
+        }
+
+        /**
+         * Adds a new PCB item to the IndexedDB PCB data store.
+         * @param {object} item - The item object to add (e.g., {pictureName, image, description}).
+         */
+        async function addItemToIndexedDB(item) {
+            try {
+                const dbInstance = await openIndexedDB();
+                const transaction = dbInstance.transaction(STORE_NAME_PCB, 'readwrite');
+                const store = transaction.objectStore(STORE_NAME_PCB);
+                const request = store.add(item);
+
+                request.onsuccess = () => {
+                    showMessageBox('Item added to local database!', 'success');
+                    fetchAndRenderItems(); // Refresh all lists after adding
+                };
+
+                request.onerror = (event) => {
+                    console.error("Error adding item to IndexedDB:", event.target.error);
+                    showMessageBox('Failed to add item to local database.', 'error');
+                };
+            }
+            catch (error) {
+                console.error("IndexedDB operation failed:", error);
+                showMessageBox("Local database not ready. Please try again.", "error");
+            }
+        }
+
+        /**
+         * Updates an existing PCB item in the IndexedDB PCB data store.
+         * @param {number} id - The ID of the item to update.
+         * @param {object} updatedItem - The updated item object.
+         */
+        async function updateItemInIndexedDB(id, updatedItem) {
+            try {
+                const dbInstance = await openIndexedDB();
+                const transaction = dbInstance.transaction(STORE_NAME_PCB, 'readwrite');
+                const store = transaction.objectStore(STORE_NAME_PCB);
+                const request = store.put({ ...updatedItem, id: id }); // 'put' updates an existing record by keyPath
+
+                request.onsuccess = () => {
+                    showMessageBox('Item updated in local database!', 'success');
+                    fetchAndRenderItems(); // Refresh all lists after updating
+                };
+
+                request.onerror = (event) => {
+                    console.error("Error updating item in IndexedDB:", event.target.error);
+                    showMessageBox('Failed to update item in local database.', 'error');
+                };
+            }
+            catch (error) {
+                console.error("IndexedDB operation failed:", error);
+                showMessageBox("Local database not ready. Please try again.", "error");
+            }
+        }
+
+        /**
+         * Deletes a PCB item from the IndexedDB PCB data store.
+         * @param {number} id - The ID of the item to delete.
+         */
+        async function deleteItemFromIndexedDB(id) {
+            // Use a custom modal or message box instead of confirm() for better UI/UX
+            if (!window.confirm('Are you sure you want to delete this item?')) { // Using window.confirm for simplicity in this example
+                return;
+            }
+            try {
+                const dbInstance = await openIndexedDB();
+                const transaction = dbInstance.transaction(STORE_NAME_PCB, 'readwrite');
+                const store = transaction.objectStore(STORE_NAME_PCB);
+                const request = store.delete(id);
+
+                request.onsuccess = () => {
+                    showMessageBox('Item deleted from local database!', 'success');
+                    fetchAndRenderItems(); // Refresh all lists after deleting
+                };
+
+                request.onerror = (event) => {
+                    console.error("Error deleting item from IndexedDB:", event.target.error);
+                    showMessageBox('Failed to delete item from local database.', 'error');
+                };
+            }
+            catch (error) {
+                console.error("IndexedDB operation failed:", error);
+                showMessageBox("Local database not ready. Please try again.", "error");
+            }
+        }
+
+        /**
+         * Retrieves all PCB items from the IndexedDB PCB data store.
+         * @returns {Promise<Array<object>>} A promise that resolves with an array of all stored items.
+         */
+        async function getAllItemsFromIndexedDB() {
+            return new Promise(async (resolve, reject) => {
+                try {
+                    const dbInstance = await openIndexedDB();
+                    const transaction = dbInstance.transaction(STORE_NAME_PCB, 'readonly');
+                    const store = transaction.objectStore(STORE_NAME_PCB);
+                    const request = store.getAll();
+
+                    request.onsuccess = () => {
+                        resolve(request.result);
+                    };
+
+                    request.onerror = (event) => {
+                        console.error("Error getting all items from IndexedDB:", event.target.error);
+                        reject(event.target.error);
+                    };
+                }
+                catch (error) {
+                    console.error("IndexedDB operation failed:", error);
+                    reject(error);
+                }
+            });
+        }
+
+        /**
+         * Fetches all items from IndexedDB and then triggers rendering functions for various sections.
+         * This function ensures data consistency across different views.
+         */
+        async function fetchAndRenderItems() {
+            try {
+                addedItems = await getAllItemsFromIndexedDB();
+                renderAddedPictures(); // Renders items in the 'Add Picture' section's list
+                renderDatabaseItems(); // Renders items in the 'Database' section
+                performSearch(); // Re-runs search to update results if search section is active
+            }
+            catch (error) {
+                console.error("Failed to fetch items for rendering:", error);
+                showMessageBox("Could not load data from local database.", "error");
+            }
+        }
+
+        /**
+         * Loads the homepage image from IndexedDB and updates the corresponding image elements.
+         * If no image is found, placeholders are used.
+         */
+        async function loadHomepageImage() {
+            try {
+                const imageData = await getSettingFromIndexedDB('homepageImage');
+                console.log("Load: Retrieved image data from IndexedDB:", imageData ? "present, length: " + imageData.length : "absent");
+                if (imageData) {
+                    homepageImageData = imageData;
+                    homePageDisplayImage.src = homepageImageData;
+                    homePageDisplayImage.alt = "Custom Homepage Image"; // Set meaningful alt text
+                    settingsHomePageImagePreview.src = homepageImageData;
+                    settingsHomePageImagePreview.alt = "Custom Homepage Image Preview"; // Set meaningful alt text
+                } else {
+                    homepageImageData = null; // Ensure it's null if no image is found
+                    homePageDisplayImage.src = HOMEPAGE_PLACEHOLDER_IMAGE;
+                    homePageDisplayImage.alt = "No Homepage Image";
+                    settingsHomePageImagePreview.src = SETTINGS_PREVIEW_PLACEHOLDER_IMAGE;
+                    settingsHomePageImagePreview.alt = "No Preview";
+                }
+                console.log("Load: homePageDisplayImage.src after loadHomepageImage:", homePageDisplayImage.src.substring(0, 50) + '...');
+            }
+            catch (error) {
+                console.error("Error loading homepage image from IndexedDB:", error);
+                // Fallback to placeholders on error
+                homePageDisplayImage.src = HOMEPAGE_PLACEHOLDER_IMAGE;
+                homePageDisplayImage.alt = "Error loading image";
+                settingsHomePageImagePreview.src = SETTINGS_PREVIEW_PLACEHOLDER_IMAGE;
+                settingsHomePageImagePreview.alt = "Error loading preview";
+            }
+        }
+
+        /** Opens the sidebar menu. */
+        function openSidebar() {
+            sidebar.classList.add('open');
+            overlay.classList.add('active');
+            mainContent.classList.add('content-shifted');
+            body.style.overflow = 'hidden'; // Prevent scrolling background when sidebar is open
+        }
+
+        /** Closes the sidebar menu. */
+        function closeSidebar() {
+            sidebar.classList.remove('open');
+            overlay.classList.remove('active');
+            mainContent.classList.remove('content-shifted');
+            body.style.overflow = ''; // Restore scrolling
+        }
+
+        /**
+         * Shows a specific section of the application and hides all others.
+         * @param {string} sectionId - The ID of the section to show (e.g., 'homeSection').
+         */
+        function showSection(sectionId) {
+            // Hide all sections first
+            homeSection.classList.add('hidden');
+            addPictureSection.classList.add('hidden');
+            searchSection.classList.add('hidden');
+            databaseSection.classList.add('hidden');
+            settingsSection.classList.add('hidden');
+            aboutSection.classList.add('hidden');
+
+            // Show the requested section
+            document.getElementById(sectionId).classList.remove('hidden');
+            closeSidebar(); // Close sidebar after navigation
+
+            // Specific logic for the settings section when it's shown
+            if (sectionId === 'settingsSection') {
+                // Ensure the settings preview reflects the current homepage image or placeholder
+                if (homepageImageData) {
+                    settingsHomePageImagePreview.src = homepageImageData;
+                    settingsHomePageImagePreview.alt = "Custom Homepage Image Preview";
+                } else {
+                    settingsHomePageImagePreview.src = SETTINGS_PREVIEW_PLACEHOLDER_IMAGE;
+                    settingsHomePageImagePreview.alt = "No Preview";
+                }
+                uploadHomepageImageButton.disabled = true; // Disable upload button until a new file is selected
+                homeImageInput.value = ''; // Clear file input for a fresh selection
+            }
+
+            // Specific logic for the home section when it's shown
+            if (sectionId === 'homeSection') {
+                console.log("Show Home: Entering home section. homepageImageData present:", !!homepageImageData, "length:", homepageImageData ? homepageImageData.length : "null");
+                if (homepageImageData) {
+                    homePageDisplayImage.src = homepageImageData;
+                    homePageDisplayImage.alt = "Custom Homepage Image";
+                } else {
+                    homePageDisplayImage.src = HOMEPAGE_PLACEHOLDER_IMAGE;
+                    homePageDisplayImage.alt = "No Homepage Image";
+                }
+                console.log("Show Home: homePageDisplayImage.src after showing home section:", homePageDisplayImage.src.substring(0, 50) + '...');
+            }
+
+            // Specific logic for the search section when it's shown
+            if (sectionId === 'searchSection') {
+                searchResultsList.innerHTML = '<p class="text-gray-500 text-center" id="noSearchResultsMessage">No search results yet.</p>';
+                searchQueryInput.value = ''; // Clear previous search query
+            }
+            // Specific logic for the database section when it's shown
+            if (sectionId === 'databaseSection') {
+                fetchAndRenderItems(); // Ensure database list is fresh when entering this section
+            }
+        }
+
+        /**
+         * Displays a custom message box with a given message and type (success, error, info).
+         * @param {string} message - The message to display.
+         * @param {string} type - The type of message ('success', 'error', 'info').
+         */
+        function showMessageBox(message, type = 'info') {
+            messageBox.textContent = message;
+            // Reset classes and apply new ones based on message type
+            messageBox.className = `fixed bottom-4 right-4 p-3 rounded-lg shadow-lg z-50 transition-opacity duration-300`;
+
+            if (type === 'success') {
+                messageBox.classList.add('bg-green-600');
+            } else if (type === 'error') {
+                messageBox.classList.add('bg-red-600');
+            } else { // info or default
+                messageBox.classList.add('bg-gray-800');
+            }
+
+            messageBox.classList.remove('hidden', 'opacity-0'); // Show and make opaque
+            messageBox.classList.add('opacity-100');
+
+            // Hide the message box after 3 seconds
+            setTimeout(() => {
+                messageBox.classList.remove('opacity-100');
+                messageBox.classList.add('opacity-0');
+                setTimeout(() => {
+                    messageBox.classList.add('hidden');
+                }, 300); // Allow fade-out transition to complete
+            }, 3000);
+        }
+
+        /**
+         * Handles image file selection for the 'Add Picture' section (from camera or gallery).
+         * Reads the selected file(s) as Base64 URL and updates the image previews.
+         * @param {Event} event - The change event from the file input.
+         */
+        function handleImageSelect(event) {
+            const files = event.target.files;
+            imagePreviewsContainer.innerHTML = ''; // Clear previous previews
+            selectedImagesBase64 = []; // Clear previous selected images
+
+            if (files.length > 0) {
+                Array.from(files).forEach(file => {
+                    const reader = new FileReader();
+                    reader.onload = (e) => {
+                        const imgElement = document.createElement('img');
+                        imgElement.src = e.target.result;
+                        imgElement.className = 'w-24 h-24 object-contain rounded-lg shadow-md zoomable-image'; // Smaller preview size
+                        imgElement.alt = `Selected Image Preview`;
+                        imgElement.addEventListener('click', toggleImageZoom);
+                        imagePreviewsContainer.appendChild(imgElement);
+                        selectedImagesBase64.push(e.target.result); // Store each image's Base64 data
+                    };
+                    reader.readAsDataURL(file);
+                });
+            }
+        }
+
+        /**
+         * Handles image file selection for the homepage image in the 'Settings' section.
+         * Updates the settings preview and enables the upload button.
+         * @param {Event} event - The change event from the file input.
+         */
+        homeImageInput.addEventListener('change', (event) => {
+            const file = event.target.files[0];
+            if (file) {
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    settingsHomePageImagePreview.src = e.target.result; // Update settings preview
+                    settingsHomePageImagePreview.alt = "Selected Image Preview";
+                    homepageImageData = e.target.result; // Store Base64 data temporarily
+                    uploadHomepageImageButton.disabled = false; // Enable upload button
+                    console.log("Settings: Image selected. homepageImageData length:", homepageImageData ? homepageImageData.length : "null");
+                };
+                reader.readAsDataURL(file);
+            } else {
+                settingsHomePageImagePreview.src = SETTINGS_PREVIEW_PLACEHOLDER_IMAGE; // Reset preview to placeholder
+                settingsHomePageImagePreview.alt = "No Preview";
+                homepageImageData = null; // Clear temporary data
+                uploadHomepageImageButton.disabled = true; // Disable upload button
+                console.log("Settings: Home image selection cleared.");
+            }
+        });
+
+        /**
+         * Event listener for the Upload Homepage Image button.
+         * Saves the selected image to IndexedDB and updates the homepage display.
+         */
+        uploadHomepageImageButton.addEventListener('click', async () => {
+            if (homepageImageData) {
+                console.log("Upload: Attempting to save homepage image. Data length:", homepageImageData.length);
+                await saveSettingToIndexedDB('homepageImage', homepageImageData);
+                
+                // Update homepage display immediately
+                homePageDisplayImage.src = homepageImageData;
+                homePageDisplayImage.alt = "Custom Homepage Image";
+                console.log("Upload: homePageDisplayImage.src set to:", homePageDisplayImage.src.substring(0, 50) + '...'); // Log truncated src
+
+                showMessageBox('Homepage image uploaded and saved!', 'success');
+                
+                // Reset settings UI after successful upload
+                homeImageInput.value = ''; // Clear file input
+                settingsHomePageImagePreview.src = SETTINGS_PREVIEW_PLACEHOLDER_IMAGE; // Reset preview to placeholder
+                settingsHomePageImagePreview.alt = "No Preview";
+                // homepageImageData is intentionally NOT set to null here to maintain the display
+                uploadHomepageImageButton.disabled = true; // Disable button
+                console.log("Upload: Homepage image uploaded and settings UI reset.");
+            } else {
+                showMessageBox('No image selected to upload.', 'error');
+                console.log("Upload: No image data to upload.");
+            }
+        });
+
+
+        /**
+         * Toggles the zoom level of an image when clicked.
+         * @param {Event} event - The click event on the image.
+         */
+        function toggleImageZoom(event) {
+            event.target.classList.toggle('zoomed');
+        }
+
+        /**
+         * Renders the list of added pictures in the 'Add Picture' section.
+         * Dynamically creates HTML elements for each item.
+         */
+        function renderAddedPictures() {
+            addedPicturesList.innerHTML = ''; // Clear existing list
+            if (addedItems.length === 0) {
+                noPicturesMessage.classList.remove('hidden'); // Show "No pictures added yet" message
+            } else {
+                noPicturesMessage.classList.add('hidden'); // Hide message if there are items
+                addedItems.forEach((item) => {
+                    const itemDiv = document.createElement('div');
+                    itemDiv.className = 'bg-gray-100 p-4 rounded-lg shadow-md flex flex-col items-center relative';
+
+                    // Display image if available
+                    if (item.image) {
+                        const imgElement = document.createElement('img');
+                        imgElement.src = item.image;
+                        imgElement.className = 'max-w-full h-48 object-contain rounded-lg mb-2 zoomable-image';
+                        imgElement.alt = `Added Picture ${item.pictureName || item.id}`;
+                        imgElement.addEventListener('click', toggleImageZoom); // Add zoom functionality
+                        itemDiv.appendChild(imgElement);
+                    }
+
+                    // Display picture name if available
+                    if (item.pictureName) {
+                        const nameElement = document.createElement('p');
+                        nameElement.className = 'text-gray-900 font-semibold mt-2';
+                        nameElement.textContent = `Name: ${item.pictureName}`;
+                        itemDiv.appendChild(nameElement);
+                    }
+
+                    // Display description if available
+                    if (item.description) {
+                        const pElement = document.createElement('p');
+                        pElement.className = 'text-gray-800 text-center';
+                        pElement.textContent = item.description;
+                        itemDiv.appendChild(pElement);
+                    }
+
+                    // Edit button for each item
+                    const editButton = document.createElement('button');
+                    editButton.className = 'absolute top-2 right-2 bg-yellow-500 hover:bg-yellow-600 text-white text-xs font-bold py-1 px-2 rounded-full shadow-md';
+                    editButton.textContent = 'Edit';
+                    editButton.onclick = () => editItem(item.id);
+                    itemDiv.appendChild(editButton);
+
+                    // Delete button for each item
+                    const deleteButton = document.createElement('button');
+                    deleteButton.className = 'absolute top-2 left-2 bg-red-500 hover:bg-red-600 text-white text-xs font-bold py-1 px-2 rounded-full shadow-md';
+                    deleteButton.textContent = 'Delete';
+                    deleteButton.onclick = () => deleteItemFromIndexedDB(item.id);
+                    itemDiv.appendChild(deleteButton);
+
+                    addedPicturesList.appendChild(itemDiv);
+                });
+            }
+        }
+
+        /**
+         * Renders the list of all items in the 'Database' section.
+         * Similar to renderAddedPictures but without edit functionality.
+         */
+        function renderDatabaseItems() {
+            databaseItemsList.innerHTML = ''; // Clear existing list
+            if (addedItems.length === 0) {
+                noDatabaseItemsMessage.classList.remove('hidden'); // Show "No items" message
+                databaseItemsList.appendChild(noDatabaseItemsMessage);
+            } else {
+                noDatabaseItemsMessage.classList.add('hidden'); // Hide message if there are items
+                addedItems.forEach((item) => {
+                    const itemDiv = document.createElement('div');
+                    itemDiv.className = 'bg-gray-100 p-4 rounded-lg shadow-md flex flex-col items-center relative';
+
+                    if (item.image) {
+                        const imgElement = document.createElement('img');
+                        imgElement.src = item.image;
+                        imgElement.className = 'max-w-full h-48 object-contain rounded-lg mb-2 zoomable-image';
+                        imgElement.alt = `Database Item ${item.pictureName || item.id}`;
+                        imgElement.addEventListener('click', toggleImageZoom);
+                        itemDiv.appendChild(imgElement);
+                    }
+
+                    if (item.pictureName) {
+                        const nameElement = document.createElement('p');
+                        nameElement.className = 'text-gray-900 font-semibold mt-2';
+                        nameElement.textContent = `Name: ${item.pictureName}`;
+                        itemDiv.appendChild(nameElement);
+                    }
+
+                    if (item.description) {
+                        const pElement = document.createElement('p');
+                        pElement.className = 'text-gray-800 text-center';
+                        pElement.textContent = item.description;
+                        itemDiv.appendChild(pElement);
+                    }
+
+                    // Delete button for each item in the database view
+                    const deleteButton = document.createElement('button');
+                    deleteButton.className = 'absolute top-2 left-2 bg-red-500 hover:bg-red-600 text-white text-xs font-bold py-1 px-2 rounded-full shadow-md';
+                    deleteButton.textContent = 'Delete';
+                    deleteButton.onclick = () => deleteItemFromIndexedDB(item.id);
+                    itemDiv.appendChild(deleteButton);
+
+                    databaseItemsList.appendChild(itemDiv);
+                });
+            }
+        }
+
+
+        /**
+         * Populates the 'Add Picture' form with data of an existing item for editing.
+         * @param {number} id - The ID of the item to edit.
+         */
+        function editItem(id) {
+            const itemToEdit = addedItems.find(item => item.id === id);
+            if (itemToEdit) {
+                currentEditingItemId = id; // Store ID of item being edited
+                pictureNameInput.value = itemToEdit.pictureName || '';
+                descriptionInput.value = itemToEdit.description || '';
+                
+                imagePreviewsContainer.innerHTML = ''; // Clear existing previews
+                selectedImagesBase64 = []; // Clear selected images array
+
+                if (itemToEdit.image) {
+                    const imgElement = document.createElement('img');
+                    imgElement.src = itemToEdit.image;
+                    imgElement.className = 'w-24 h-24 object-contain rounded-lg shadow-md zoomable-image';
+                    imgElement.alt = `Editing Image Preview`;
+                    imgElement.addEventListener('click', toggleImageZoom);
+                    imagePreviewsContainer.appendChild(imgElement);
+                    selectedImagesBase64.push(itemToEdit.image); // Add the existing image to selectedImagesBase64 for consistency
+                }
+                
+                addPictureButton.textContent = 'Save Changes'; // Change button text to "Save Changes"
+                cancelEditButton.classList.remove('hidden'); // Show cancel button
+                addPictureTitle.textContent = 'Edit Picture & Description'; // Update section title
+                showMessageBox('Editing item. Make your changes and click Save Changes.', 'info');
+            }
+        }
+
+        /** Resets the 'Add Picture' form to its initial state. */
+        function resetAddPictureForm() {
+            currentEditingItemId = null; // Clear editing state
+            pictureNameInput.value = '';
+            descriptionInput.value = '';
+            cameraInput.value = ''; // Clear file input values
+            galleryInput.value = ''; // Clear file input values
+            imagePreviewsContainer.innerHTML = ''; // Clear image previews
+            selectedImagesBase64 = []; // Clear selected images array
+            addPictureButton.textContent = 'Add Picture & Description'; // Reset button text
+            cancelEditButton.classList.add('hidden'); // Hide cancel button
+            addPictureTitle.textContent = 'Add New Picture'; // Reset section title
+        }
+
+        /**
+         * Performs a search on stored items based on the query input and displays results.
+         */
+        function performSearch() {
+            const query = searchQueryInput.value.toLowerCase().trim();
+            searchResultsList.innerHTML = ''; // Clear previous search results
+
+            if (query === '') {
+                noSearchResultsMessage.classList.remove('hidden'); // Show "No search results yet" if query is empty
+                searchResultsList.appendChild(noSearchResultsMessage);
+                return;
+            }
+
+            // Filter items based on description or picture name matching the query
+            const filteredResults = addedItems.filter(item =>
+                (item.description && item.description.toLowerCase().includes(query)) ||
+                (item.pictureName && item.pictureName.toLowerCase().includes(query))
+            );
+
+            if (filteredResults.length === 0) {
+                const noResultsDiv = document.createElement('p');
+                noResultsDiv.className = 'text-gray-500 text-center';
+                noResultsDiv.textContent = 'No matching results found.';
+                searchResultsList.appendChild(noResultsDiv);
+            } else {
+                // Render each filtered result
+                filteredResults.forEach(item => {
+                    const resultDiv = document.createElement('div');
+                    resultDiv.className = 'bg-gray-100 p-4 rounded-lg shadow-md flex flex-col items-center';
+
+                    if (item.image) {
+                        const imgElement = document.createElement('img');
+                        imgElement.src = item.image;
+                        imgElement.className = 'max-w-full h-48 object-contain rounded-lg mb-2 zoomable-image';
+                        imgElement.alt = `Search Result ${item.pictureName || item.id}`;
+                        imgElement.addEventListener('click', toggleImageZoom);
+                        resultDiv.appendChild(imgElement);
+                    }
+
+                    if (item.pictureName) {
+                        const nameElement = document.createElement('p');
+                        nameElement.className = 'text-gray-900 font-semibold mt-2';
+                        nameElement.textContent = `Name: ${item.pictureName}`;
+                        resultDiv.appendChild(nameElement);
+                    }
+
+                    if (item.description) {
+                        const pElement = document.createElement('p');
+                        pElement.className = 'text-gray-800 text-center';
+                        pElement.textContent = item.description;
+                        resultDiv.appendChild(pElement);
+                    }
+                    searchResultsList.appendChild(resultDiv);
+                });
+            }
+        }
+
+        // --- PDF Generation and Sharing ---
+
+        /**
+         * Generates a PDF document from the currently stored PCB items.
+         * @returns {Promise<Blob|null>} A promise that resolves with the PDF Blob, or null if generation fails.
+         */
+        async function generatePdf() {
+            if (addedItems.length === 0) {
+                showMessageBox("No items to generate PDF.", "info");
+                return null;
+            }
+
+            showMessageBox("Generating PDF...", "info");
+
+            // Create a temporary div to render content for PDF generation
+            const pdfContentContainer = document.createElement('div');
+            pdfContentContainer.style.padding = '20mm';
+            pdfContentContainer.style.fontFamily = 'Inter, sans-serif'; // Ensure consistent font in PDF
+
+            const title = document.createElement('h1');
+            title.textContent = 'E2S PCB Database Report';
+            title.style.textAlign = 'center';
+            title.style.marginBottom = '20px';
+            pdfContentContainer.appendChild(title);
+
+            // Add each item to the PDF content container
+            addedItems.forEach((item, index) => {
+                const itemDiv = document.createElement('div');
+                itemDiv.style.marginBottom = '20px';
+                itemDiv.style.border = '1px solid #ccc';
+                itemDiv.style.padding = '10px';
+                itemDiv.style.borderRadius = '8px';
+                itemDiv.style.backgroundColor = '#f9f9f9';
+
+                const itemTitle = document.createElement('h3');
+                itemTitle.textContent = `Item ${index + 1}`;
+                itemTitle.style.fontWeight = 'bold';
+                itemTitle.style.marginBottom = '10px';
+                itemDiv.appendChild(itemTitle);
+
+                if (item.pictureName) {
+                    const nameElement = document.createElement('p');
+                    nameElement.textContent = `Name: ${item.pictureName}`;
+                    nameElement.style.marginBottom = '5px';
+                    itemDiv.appendChild(nameElement);
+                }
+
+                if (item.image) {
+                    const imgElement = document.createElement('img');
+                    imgElement.src = item.image;
+                    imgElement.style.maxWidth = '100%'; // Ensure image fits within PDF page width
+                    imgElement.style.height = 'auto';
+                    imgElement.style.display = 'block';
+                    imgElement.style.marginBottom = '10px';
+                    imgElement.style.borderRadius = '4px';
+                    itemDiv.appendChild(imgElement);
+                }
+
+                if (item.description) {
+                    const pElement = document.createElement('p');
+                    pElement.className = 'text-gray-800 text-center';
+                    pElement.textContent = item.description;
+                    itemDiv.appendChild(pElement);
+                }
+                pdfContentContainer.appendChild(itemDiv);
+            });
+
+            // Temporarily append the container to the body for html2pdf to process
+            document.body.appendChild(pdfContentContainer);
+
+            // Configuration options for html2pdf
+            const options = {
+                margin: 10,
+                filename: 'E2S_PCB_Data.pdf',
+                image: { type: 'jpeg', quality: 0.98 },
+                html2canvas: { scale: 2 }, // Higher scale for better quality
+                jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
+            };
+
+            try {
+                // Generate PDF as a Blob
+                const pdfBlob = await html2pdf().from(pdfContentContainer).outputPdf('blob');
+                showMessageBox("PDF generated! Ready for download/share.", "success");
+                return pdfBlob;
+            } catch (error) {
+                console.error("Error generating PDF:", error);
+                showMessageBox("Failed to generate PDF.", "error");
+                return null;
+            } finally {
+                // Always remove the temporary container from the DOM
+                document.body.removeChild(pdfContentContainer);
+            }
+        }
+
+        /** Triggers the download of the generated PDF. */
+        async function downloadPdf() {
+            const pdfBlob = await generatePdf();
+            if (pdfBlob) {
+                const url = URL.createObjectURL(pdfBlob); // Create a URL for the Blob
+                const a = document.createElement('a'); // Create a temporary anchor element
+                a.href = url;
+                a.download = 'E2S_PCB_Data.pdf'; // Set the download filename
+                document.body.appendChild(a);
+                a.click(); // Programmatically click to trigger download
+                document.body.removeChild(a); // Clean up the anchor element
+                URL.revokeObjectURL(url); // Release the object URL
+            }
+        }
+
+        /** Attempts to share the generated PDF using the Web Share API. */
+        async function sharePdf() {
+            const pdfBlob = await generatePdf();
+            if (pdfBlob) {
+                // Create a File object from the Blob for sharing
+                const file = new File([pdfBlob], 'E2S_PCB_Data.pdf', { type: 'application/pdf' });
+                if (navigator.share) { // Check if Web Share API is supported
+                    try {
+                        await navigator.share({
+                            files: [file],
+                            title: 'E2S PCB Data',
+                            text: 'Here is your E2S PCB data in PDF format.',
+                        });
+                        showMessageBox('PDF shared successfully!', 'success');
+                    } catch (error) {
+                        console.error('Error sharing PDF:', error);
+                        showMessageBox('Failed to share PDF. ' + error.message, 'error');
+                    }
+                } else {
+                    showMessageBox('Web Share API not supported on this device. Downloading PDF instead.', 'info');
+                    downloadPdf(); // Offer to download if sharing isn't supported
+                }
+            }
+        }
+
+
+        // --- Event Listeners ---
+
+        // Toggle sidebar visibility when the menu button is clicked
+        menuButton.addEventListener('click', () => {
+            if (sidebar.classList.contains('open')) {
+                closeSidebar();
+            } else {
+                openSidebar();
+            }
+        });
+
+        // Close sidebar when the overlay (area outside sidebar) is clicked
+        overlay.addEventListener('click', closeSidebar);
+
+        // Navigation menu item click listeners
+        homeMenuItem.addEventListener('click', (e) => {
+            e.preventDefault(); // Prevent default link behavior
+            showSection('homeSection');
+        });
+
+        addPictureMenuItem.addEventListener('click', (e) => {
+            e.preventDefault();
+            showSection('addPictureSection');
+            resetAddPictureForm(); // Clear form when navigating to Add Picture
+            fetchAndRenderItems(); // Ensure items are loaded when entering Add Picture section
+        });
+
+        searchMenuItem.addEventListener('click', (e) => {
+            e.preventDefault();
+            showSection('searchSection');
+        });
+
+        databaseMenuItem.addEventListener('click', (e) => {
+            e.preventDefault();
+            showSection('databaseSection');
+            fetchAndRenderItems(); // Ensure the list is updated when entering this section
+        });
+
+        settingsMenuItem.addEventListener('click', (e) => {
+            e.preventDefault();
+            showSection('settingsSection');
+        });
+
+        aboutMenuItem.addEventListener('click', (e) => {
+            e.preventDefault();
+            showSection('aboutSection');
+        });
+
+        // Home Page Search Button click listener
+        homeSearchButton.addEventListener('click', () => {
+            searchQueryInput.value = ''; // Clear search input in search section
+            showSection('searchSection');
+            performSearch(); // Perform an empty search to show all items or "no results"
+        });
+
+        // Listen for changes on camera and gallery file inputs (for adding new pictures)
+        cameraInput.addEventListener('change', handleImageSelect);
+        galleryInput.addEventListener('change', handleImageSelect);
+
+        // Add/Save Picture button click listener
+        addPictureButton.addEventListener('click', async () => {
+            const pictureName = pictureNameInput.value.trim();
+            const description = descriptionInput.value.trim();
+
+            if (currentEditingItemId) {
+                // If editing, update the single item
+                const imageToUse = selectedImagesBase64.length > 0 ? selectedImagesBase64[0] : null; // Take the first selected image or null
+                if (imageToUse || description || pictureName) {
+                    const itemData = {
+                        pictureName: pictureName,
+                        image: imageToUse,
+                        description: description
+                    };
+                    await updateItemInIndexedDB(currentEditingItemId, itemData);
+                } else {
+                    showMessageBox('Please select an image, enter a picture name, or enter a description to save changes.', 'error');
+                }
+            } else {
+                // If adding new, handle multiple images
+                if (selectedImagesBase64.length > 0) {
+                    for (const imageBase64 of selectedImagesBase64) {
+                        const itemData = {
+                            pictureName: pictureName,
+                            image: imageBase64,
+                            description: description
+                        };
+                        await addItemToIndexedDB(itemData); // Add each selected image as a new item
+                    }
+                    showMessageBox(`${selectedImagesBase64.length} pictures added to local database!`, 'success');
+                } else if (description || pictureName) {
+                    // Allow adding an item with just name/description if no image is selected
+                    const itemData = {
+                        pictureName: pictureName,
+                        image: null,
+                        description: description
+                    };
+                    await addItemToIndexedDB(itemData);
+                } else {
+                    showMessageBox('Please select an image, enter a picture name, or enter a description.', 'error');
+                }
+            }
+            resetAddPictureForm(); // Reset form after add/save
+        });
+
+        // Cancel Edit button click listener
+        cancelEditButton.addEventListener('click', () => {
+            resetAddPictureForm();
+            showMessageBox('Edit cancelled.', 'info');
+        });
+
+        // Search button click listener (within search section)
+        searchButton.addEventListener('click', performSearch);
+
+        // Allow pressing Enter key in the search input to trigger search
+        searchQueryInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                performSearch();
+            }
+        });
+
+        // PDF generation and sharing button listeners
+        generatePdfButton.addEventListener('click', downloadPdf);
+        sharePdfButton.addEventListener('click', sharePdf);
+
+        // Refresh Database Button click listener
+        refreshDatabaseButton.addEventListener('click', fetchAndRenderItems);
+
+
+        // --- Initialization on Page Load ---
+        // Open IndexedDB, load homepage image, fetch and render all items, then show the home section.
+        openIndexedDB().then(async () => {
+            await loadHomepageImage(); // Load homepage image first to ensure it's ready
+            fetchAndRenderItems(); // Then fetch and render other PCB items
+            showSection('homeSection'); // Display the home section initially
+        });
+    </script>
+</body>
+</html>
