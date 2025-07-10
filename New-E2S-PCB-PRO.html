@@ -1,0 +1,1175 @@
+import React, { useState, useEffect, useRef } from 'react';
+
+// Ensure html2pdf.js is loaded globally if not already.
+// In a real React project, you'd typically import it or use a React-specific wrapper.
+// For this environment, we assume it's available via a script tag in the HTML.
+
+// Main App component
+const App = () => {
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [currentPage, setCurrentPage] = useState('home');
+  
+  // State for theme: 'light' or 'dark'
+  const [theme, setTheme] = useState(() => {
+    const savedTheme = localStorage.getItem('appTheme');
+    return savedTheme || 'light'; // Default to 'light' if no theme is saved
+  });
+
+  // State for Add PCB section
+  const [pcbName, setPcbName] = useState('');
+  const [pcbDescription, setPcbDescription] = useState('');
+  const [pcbImages, setPcbImages] = useState([]); // Changed to array for multiple images
+  const [usedByFamily, setUsedByFamily] = useState(''); // State for 'Used By Family'
+
+  // Refs for file inputs to clear their values
+  const cameraInputRef = useRef(null);
+  const galleryInputRef = useRef(null);
+
+  // State for Search section
+  const [searchQuery, setSearchQuery] = useState('');
+
+  // State for Scan/Compare section
+  const [scanCompareImage, setScanCompareImage] = useState(null);
+  const [comparisonResults, setComparisonResults] = useState('');
+  const scanCompareInputRef = useRef(null); // Ref for the scan/compare file input
+
+  // State for Homepage Image section in Settings
+  const [homepageImage, setHomepageImage] = useState(() => {
+    const savedHomepageImage = localStorage.getItem('homepageImage');
+    return savedHomepageImage || null; // Default to null if no image is saved
+  });
+  const [tempHomepageImage, setTempHomepageImage] = useState(null); // For previewing selected image before setting
+  const homepageImageInputRef = useRef(null); // Ref for the homepage image input
+
+  // State for general status messages (e.g., "Homepage image set successfully!")
+  const [statusMessage, setStatusMessage] = useState({ message: '', type: '' }); // type: 'success', 'error', 'info'
+
+  // State for import file and message
+  const [importFile, setImportFile] = useState(null);
+  const importFileInputRef = useRef(null);
+  const [importMessage, setImportMessage] = useState({ message: '', type: '' });
+
+  // State for delete database confirmation
+  const [showDeleteConfirmation, setShowDeleteConfirmation] = useState(false);
+  const [deleteMessage, setDeleteMessage] = useState({ message: '', type: '' });
+
+  // State for About Us collapsable sections
+  const [aboutUsExpanded, setAboutUsExpanded] = useState(false);
+  const [servingSectorExpanded, setServingSectorExpanded] = useState(false);
+  const [productDevelopmentExpanded, setProductDevelopmentExpanded] = useState(false);
+
+
+  // Global state for PCB data
+  const [pcbs, setPcbs] = useState(() => {
+    // Initialize from localStorage
+    const savedPcbs = localStorage.getItem('pcbs');
+    return savedPcbs ? JSON.parse(savedPcbs) : [];
+  });
+
+  // Effect to save pcbs to localStorage whenever it changes
+  useEffect(() => {
+    localStorage.setItem('pcbs', JSON.stringify(pcbs));
+  }, [pcbs]);
+
+  // Effect to save theme to localStorage whenever it changes
+  useEffect(() => {
+    localStorage.setItem('appTheme', theme);
+    // Apply theme classes to body or root element
+    document.documentElement.classList.remove('light-theme', 'dark-theme');
+    document.documentElement.classList.add(`${theme}-theme`);
+  }, [theme]);
+
+  const toggleSidebar = () => {
+    setIsSidebarOpen(!isSidebarOpen);
+  };
+
+  const navigateTo = (page) => {
+    setCurrentPage(page);
+    setIsSidebarOpen(false); // Close sidebar after navigation
+    // Reset Add PCB form when navigating away
+    if (page !== 'addPcb') {
+      setPcbName('');
+      setPcbDescription('');
+      setPcbImages([]); // Clear image array
+      setUsedByFamily(''); // Reset 'Used By Family'
+      if (cameraInputRef.current) cameraInputRef.current.value = '';
+      if (galleryInputRef.current) galleryInputRef.current.value = ''; 
+    }
+    // Reset Search form when navigating away
+    if (page !== 'search') {
+      setSearchQuery('');
+    }
+    // Reset Scan/Compare form when navigating away
+    if (page !== 'scanCompare') {
+      setScanCompareImage(null);
+      setComparisonResults('');
+      if (scanCompareInputRef.current) scanCompareInputRef.current.value = '';
+    }
+    // Reset Homepage Image preview and status message when navigating away from settings
+    if (page !== 'settings') {
+      setTempHomepageImage(null);
+      if (homepageImageInputRef.current) homepageImageInputRef.current.value = '';
+      setStatusMessage({ message: '', type: '' }); // Clear status message
+      setImportFile(null); // Clear import file
+      setImportMessage({ message: '', type: '' }); // Clear import message
+      if (importFileInputRef.current) importFileInputRef.current.value = ''; // Clear import file input
+      setShowDeleteConfirmation(false); // Hide delete confirmation
+      setDeleteMessage({ message: '', type: '' }); // Clear delete message
+    }
+    // Reset About Us section collapse states when navigating away
+    if (page !== 'aboutUs') {
+      setAboutUsExpanded(false);
+      setServingSectorExpanded(false);
+      setProductDevelopmentExpanded(false);
+    }
+  };
+
+  // Handler for image input (camera or gallery) in Add PCB tab
+  const handleImageChange = (event) => {
+    const files = Array.from(event.target.files); // Get all selected files
+    if (files.length > 0) {
+      const newImages = [];
+      let filesProcessed = 0;
+
+      files.forEach(file => {
+        const reader = new FileReader();
+        reader.onloadend = () => {
+          newImages.push(reader.result);
+          filesProcessed++;
+          if (filesProcessed === files.length) {
+            setPcbImages(prevImages => [...prevImages, ...newImages]); // Append new images
+          }
+        };
+        reader.readAsDataURL(file);
+      });
+    }
+  };
+
+  // Handler for adding PCB
+  const handleAddPcb = () => {
+    if (!pcbName || !pcbDescription || pcbImages.length === 0 || !usedByFamily) { // Check pcbImages.length
+      alert('Please fill in all fields and select at least one image.'); 
+      return;
+    }
+
+    const newPcb = {
+      id: Date.now(), // Simple unique ID
+      name: pcbName,
+      description: pcbDescription,
+      images: pcbImages, // Store array of base64 images
+      usedByFamily: usedByFamily, // Store 'Used By Family'
+    };
+
+    setPcbs((prevPcbs) => [...prevPcbs, newPcb]); // Add new PCB to state
+    alert('PCB & Description Added!'); 
+
+    // Clear form after submission
+    setPcbName('');
+    setPcbDescription('');
+    setPcbImages([]); // Clear image array
+    setUsedByFamily(''); // Clear 'Used By Family' field
+    
+    // Clear file input values directly using refs
+    if (cameraInputRef.current) cameraInputRef.current.value = '';
+    if (galleryInputRef.current) galleryInputRef.current.value = '';
+  };
+
+  // Handler for search functionality
+  const handleSearch = () => {
+    alert(`Searching for: ${searchQuery}`); // Placeholder for actual search logic
+    // In a real application, you would filter your PCB data based on searchQuery
+    // and display the results. For now, this is just a placeholder.
+  };
+
+  // Handler for image input in Scan/Compare tab
+  const handleScanCompareImageChange = (event) => {
+    const file = event.target.files[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setScanCompareImage(reader.result);
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  // Handler for Compare PCB Image with Database button
+  const handleComparePcbImage = () => {
+    if (!scanCompareImage) {
+      alert('Please select an image to compare.');
+      setComparisonResults('<p class="text-gray-500 text-center">Comparison results will appear here.</p>');
+      return;
+    }
+
+    setComparisonResults('Comparing image with database...');
+
+    if (pcbs.length === 0) {
+      setComparisonResults(`<p class="text-red-500">No PCBs in the database to compare against.</p>`);
+      return;
+    }
+
+    let resultsHtml = `<h3 class="text-xl font-semibold ${theme === 'dark' ? 'text-gray-100' : 'text-gray-800'} mb-2">Comparison Results:</h3>`;
+    let foundMatches = false;
+
+    // Simplified comparison: For now, just indicate if an image is present
+    // and list all PCBs in the database as potential matches.
+    // In a real application, this would involve actual image analysis and feature comparison.
+    resultsHtml += `<p class="mb-4 ${theme === 'dark' ? 'text-gray-300' : 'text-gray-700'}"><strong>Selected Image:</strong></p>`;
+    resultsHtml += `<div class="flex justify-center mb-4"><img src="${scanCompareImage}" alt="Selected for Comparison" class="max-w-full max-h-48 object-contain rounded-lg shadow-md" /></div>`;
+    resultsHtml += `<p class="mb-4 ${theme === 'dark' ? 'text-gray-300' : 'text-gray-700'}"><strong>Database PCBs:</strong></p>`;
+
+    pcbs.forEach(pcb => {
+      foundMatches = true; // Always true if there are PCBs in the database
+      resultsHtml += `
+        <div class="border border-gray-300 rounded-lg p-4 mb-4 ${theme === 'dark' ? 'bg-gray-600 text-gray-100' : 'bg-gray-50 text-gray-700'}">
+          <h4 class="font-bold text-lg ${theme === 'dark' ? 'text-blue-300' : 'text-blue-700'}">${pcb.name} (Used by: ${pcb.usedByFamily})</h4>
+          <p class="text-sm ${theme === 'dark' ? 'text-gray-200' : 'text-gray-600'} mb-2">Description: ${pcb.description || 'N/A'}</p>
+          <div class="flex justify-center mt-2">
+            ${pcb.images && pcb.images.length > 0 ? 
+              `<img src="${pcb.images[0]}" alt="${pcb.name}" class="w-24 h-24 object-cover rounded-md" />` : 
+              `<img src="https://placehold.co/96x96/cccccc/333333?text=No+Image" alt="No Image" class="w-24 h-24 object-cover rounded-md" />`}
+          </div>
+          <p class="${theme === 'dark' ? 'text-green-300' : 'text-green-600'} mt-2">Potential Match (Requires visual verification)</p>
+        </div>
+      `;
+    });
+
+    if (!foundMatches) {
+      resultsHtml += `<p class="${theme === 'dark' ? 'text-gray-400' : 'text-gray-500'}">No PCBs found in the database.</p>`;
+    }
+
+    setComparisonResults(resultsHtml);
+  };
+
+  // Handler for homepage image selection in Settings
+  const handleHomepageImageSelect = (event) => {
+    const file = event.target.files[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setTempHomepageImage(reader.result); // Set for preview
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  // Handler for setting homepage image
+  const handleSetHomepageImage = () => {
+    if (tempHomepageImage) {
+      setHomepageImage(tempHomepageImage); // Set the actual homepage image
+      localStorage.setItem('homepageImage', tempHomepageImage); // Persist to local storage
+      setStatusMessage({ message: 'Homepage image set successfully!', type: 'success' }); // Set success message
+      setTempHomepageImage(null); // Clear preview
+      if (homepageImageInputRef.current) homepageImageInputRef.current.value = ''; // Clear file input
+
+      // Clear message after 3 seconds
+      setTimeout(() => {
+        setStatusMessage({ message: '', type: '' });
+      }, 3000);
+
+    } else {
+      setStatusMessage({ message: 'Please select an image first.', type: 'error' }); // Set error message
+      setTimeout(() => {
+        setStatusMessage({ message: '', type: '' });
+      }, 3000);
+    }
+  };
+
+
+  // --- File Generation & Sharing Functions ---
+
+  /**
+   * Helper function to trigger file download or Web Share API.
+   * @param {Blob} fileBlob - The Blob object of the file to share/download.
+   * @param {string} fileName - The desired file name.
+   * @param {string} title - Title for Web Share API.
+   * @param {string} text - Text for Web Share API.
+   */
+  const shareOrDownloadFile = async (fileBlob, fileName, title, text) => {
+    if (navigator.share && navigator.canShare && navigator.canShare({ files: [new File([], fileName, { type: fileBlob.type })] })) {
+      try {
+        const file = new File([fileBlob], fileName, { type: fileBlob.type });
+        await navigator.share({
+          files: [file],
+          title: title,
+          text: text,
+        });
+        alert('File shared successfully!');
+      } catch (error) {
+        console.error('Error sharing file:', error);
+        alert('Error sharing file: ' + error.message);
+      }
+    } else {
+      // Fallback for download if Web Share API is not available
+      const link = document.createElement('a');
+      link.href = URL.createObjectURL(fileBlob);
+      link.download = fileName;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(link.href); // Clean up the URL object
+      alert('File downloaded successfully!');
+    }
+  };
+
+  const generateCsvReport = () => {
+    if (pcbs.length === 0) {
+      alert('No PCBs in the database to export to CSV.');
+      return;
+    }
+
+    let csvContent = "PCB Name,Description,Images (Base64),Used By Family\n"; // Changed 'Image' to 'Images'
+    pcbs.forEach(pcb => {
+      // Escape double quotes within fields by doubling them
+      const name = `"${(pcb.name || '').replace(/"/g, '""')}"`;
+      const description = `"${(pcb.description || '').replace(/"/g, '""')}"`;
+      // Join multiple images with a separator for CSV
+      const images = `"${(pcb.images && pcb.images.length > 0 ? pcb.images.map(img => img.replace(/"/g, '""')).join(' | ') : '')}"`; 
+      const family = `"${(pcb.usedByFamily || '').replace(/"/g, '""')}"`; 
+      csvContent += `${name},${description},${images},${family}\n`;
+    });
+
+    const csvBlob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    shareOrDownloadFile(csvBlob, 'pcb_report.csv', 'PCB Database CSV Report', 'Here is your PCB database in CSV format.');
+  };
+
+  const generatePdfReport = async (shareByEmail = false) => {
+    if (pcbs.length === 0) {
+      alert('No PCBs in the database to generate a PDF report.');
+      return;
+    }
+
+    // Create a temporary element to render PDF content
+    const pdfContentElement = document.createElement('div');
+    pdfContentElement.style.padding = '20px';
+    pdfContentElement.style.fontFamily = 'sans-serif';
+    pdfContentElement.innerHTML = `
+      <h1 style="text-align: center; color: #333;">E2S PCB Database Report</h1>
+      <p style="text-align: center; color: #555;">Generated on: ${new Date().toLocaleDateString()}</p>
+      <hr style="margin: 20px 0; border: 0; border-top: 1px solid #eee;">
+      <table style="width: 100%; border-collapse: collapse; margin-top: 20px;">
+        <thead>
+          <tr style="background-color: #f2f2f2;">
+            <th style="border: 1px solid #ddd; padding: 8px; text-align: left;">PCB Name</th>
+            <th style="border: 1px solid #ddd; padding: 8px; text-align: left;">Description</th>
+            <th style="border: 1px solid #ddd; padding: 8px; text-align: left;">Used By Family</th>
+            <th style="border: 1px solid #ddd; padding: 8px; text-align: left;">Image (First)</th> {/* Changed header */}
+          </tr>
+        </thead>
+        <tbody>
+          ${pcbs.map(pcb => `
+            <tr>
+              <td style="border: 1px solid #ddd; padding: 8px;">${pcb.name || 'N/A'}</td>
+              <td style="border: 1px solid #ddd; padding: 8px;">${pcb.description || 'N/A'}</td>
+              <td style="border: 1px solid #ddd; padding: 8px;">${pcb.usedByFamily || 'N/A'}</td>
+              <td style="border: 1px solid #ddd; padding: 8px;">
+                ${pcb.images && pcb.images.length > 0 ? 
+                  `<img src="${pcb.images[0]}" style="max-width: 80px; max-height: 80px; display: block;">` : 
+                  `No Image`}
+              </td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
+    `;
+
+    // Append to body temporarily to allow html2pdf to render it, then remove
+    document.body.appendChild(pdfContentElement);
+
+    try {
+      const pdfBlob = await window.html2pdf().from(pdfContentElement).outputPdf('blob');
+      
+      if (shareByEmail) {
+        shareOrDownloadFile(pdfBlob, 'pcb_report.pdf', 'E2S PCB Report', 'Please find the attached PCB database report.');
+      } else {
+        const link = document.createElement('a');
+        link.href = URL.createObjectURL(pdfBlob);
+        link.download = 'pcb_report.pdf';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(link.href);
+        alert('PDF report created and downloaded!');
+      }
+    } catch (error) {
+      console.error('Error generating PDF:', error);
+      alert('Error generating PDF: ' + error.message);
+    } finally {
+      document.body.removeChild(pdfContentElement); // Clean up temporary element
+    }
+  };
+
+  // Handler for import file selection
+  const handleImportFileChange = (event) => {
+    const file = event.target.files[0];
+    if (file) {
+      setImportFile(file);
+      setImportMessage({ message: `File selected: ${file.name}`, type: 'info' });
+    } else {
+      setImportFile(null);
+      setImportMessage({ message: 'No file selected.', type: 'error' });
+    }
+  };
+
+  // Handler for importing database from CSV
+  const handleImportDatabase = () => {
+    if (!importFile) {
+      setImportMessage({ message: 'Please select a CSV file to import.', type: 'error' });
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const csvText = e.target.result;
+      try {
+        const importedPcbs = parseCsv(csvText);
+        setPcbs(importedPcbs); // Overwrite existing data with imported data
+        setImportMessage({ message: `Successfully imported ${importedPcbs.length} PCBs.`, type: 'success' });
+        setImportFile(null); // Clear selected file
+        if (importFileInputRef.current) importFileInputRef.current.value = ''; // Clear file input
+      } catch (error) {
+        setImportMessage({ message: `Error parsing CSV: ${error.message}`, type: 'error' });
+        console.error('Error parsing CSV:', error);
+      } finally {
+        setTimeout(() => {
+          setImportMessage({ message: '', type: '' });
+        }, 5000);
+      }
+    };
+    reader.onerror = () => {
+      setImportMessage({ message: 'Failed to read file.', type: 'error' });
+      setTimeout(() => {
+        setImportMessage({ message: '', type: '' });
+      }, 3000);
+    };
+    reader.readAsText(importFile);
+  };
+
+  // Basic CSV parser (assumes comma-separated, double-quote escaped fields)
+  const parseCsv = (csvText) => {
+    const lines = csvText.split('\n').filter(line => line.trim() !== '');
+    if (lines.length < 2) {
+      throw new Error('CSV file is empty or malformed (requires header + data).');
+    }
+
+    const header = lines[0].split(',').map(h => h.trim().replace(/^"|"$/g, '')); // Remove quotes from headers
+    const dataLines = lines.slice(1);
+
+    const parsedData = dataLines.map(line => {
+      // Simple regex to split by comma, ignoring commas inside double quotes
+      const values = line.match(/(".*?"|[^",]+)(,|$)/g).map(val => 
+        val.replace(/,$/, '').replace(/^"|"$/g, '').replace(/""/g, '"').trim()
+      );
+      
+      const pcb = {};
+      header.forEach((key, index) => {
+        if (key === "Images (Base64)") {
+          pcb.images = values[index] ? values[index].split(' | ').filter(img => img) : [];
+        } else {
+          pcb[key.toLowerCase().replace(/\s\(base64\)/, '').replace(/\s/g, '')] = values[index];
+        }
+      });
+      // Generate a new ID for imported PCBs to avoid conflicts if IDs are not unique
+      pcb.id = Date.now() + Math.random(); 
+      return pcb;
+    });
+    return parsedData;
+  };
+
+  // Handler to show delete confirmation
+  const handleDeleteDatabasePrompt = () => {
+    setShowDeleteConfirmation(true);
+    setDeleteMessage({ message: 'WARNING: This will permanently delete all PCB data. Please backup your database using the "Export Database to CSV" option before proceeding. Are you sure you want to delete?', type: 'error' });
+  };
+
+  // Handler to confirm and delete database
+  const confirmDeleteDatabase = () => {
+    setPcbs([]); // Clear all PCBs from state
+    localStorage.removeItem('pcbs'); // Clear from local storage
+    setDeleteMessage({ message: 'Database successfully deleted!', type: 'success' });
+    setShowDeleteConfirmation(false); // Hide confirmation prompt
+
+    // Clear message after 3 seconds
+    setTimeout(() => {
+      setDeleteMessage({ message: '', type: '' });
+    }, 3000);
+  };
+
+
+  return (
+    <div className={`min-h-screen flex flex-col items-center justify-center p-4 relative
+      ${theme === 'dark' ? 'bg-gray-900 text-gray-100' : 'bg-gradient-to-br from-blue-500 to-purple-600 text-gray-900'}
+    `}>
+      {/* Hamburger Menu Button */}
+      <button
+        className={`absolute top-4 left-4 p-3 rounded-full shadow-lg z-20 focus:outline-none focus:ring-2
+          ${theme === 'dark' ? 'bg-gray-700 text-gray-100 focus:ring-blue-300' : 'bg-white text-gray-800 focus:ring-blue-500'}
+        `}
+        onClick={toggleSidebar}
+      >
+        <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 6h16M4 12h16M4 18h16"></path>
+        </svg>
+      </button>
+
+      {/* Sidebar Menu */}
+      <div
+        className={`fixed top-0 left-0 h-full bg-gray-800 text-white p-6 shadow-xl z-30 transform ${
+          isSidebarOpen ? 'translate-x-0' : '-translate-x-full'
+        } transition-transform duration-300 ease-in-out`}
+        style={{ width: '280px' }}
+      >
+        <h2 className="text-2xl font-bold mb-6">Menu</h2>
+        <nav>
+          <ul>
+            <li className="mb-4">
+              <a href="#" className="text-lg hover:text-blue-300 transition duration-200 block py-1" onClick={() => navigateTo('home')}>
+                Home
+              </a>
+            </li>
+            <li className="mb-4">
+              <a href="#" className="text-lg hover:text-blue-300 transition duration-200 block py-1" onClick={() => navigateTo('addPcb')}>
+                Add PCB
+              </a>
+            </li>
+            <li className="mb-4">
+              <a href="#" className="text-lg hover:text-blue-300 transition duration-200 block py-1" onClick={() => navigateTo('search')}>
+                Search
+              </a>
+            </li>
+            <li className="mb-4">
+              <a href="#" className="text-lg hover:text-blue-300 transition duration-200 block py-1" onClick={() => navigateTo('database')}>
+                Database
+              </a>
+            </li>
+            <li className="mb-4">
+              <a href="#" className="text-lg hover:text-blue-300 transition duration-200 block py-1" onClick={() => navigateTo('scanCompare')}>
+                Scan/Compare
+              </a>
+            </li>
+            <li className="mb-4">
+              <a href="#" className="text-lg hover:text-blue-300 transition duration-200 block py-1" onClick={() => navigateTo('settings')}>
+                Settings
+              </a>
+            </li>
+            <li className="mb-4">
+              <a href="#" className="text-lg hover:text-blue-300 transition duration-200 block py-1" onClick={() => navigateTo('appCreator')}>
+                App Creator
+              </a>
+            </li>
+            <li>
+              <a href="#" className="text-lg hover:text-blue-300 transition duration-200 block py-1" onClick={() => navigateTo('aboutUs')}>
+                About Us
+              </a>
+            </li>
+          </ul>
+        </nav>
+      </div>
+
+      {/* Overlay */}
+      {isSidebarOpen && (
+        <div
+          className="fixed inset-0 bg-black bg-opacity-50 z-20"
+          onClick={toggleSidebar}
+        ></div>
+      )}
+
+      {/* Main Content Area - Conditionally Rendered */}
+      {currentPage === 'home' && (
+        <div className={`p-8 rounded-xl shadow-2xl text-center max-w-sm w-full z-10 transition-opacity duration-300
+          ${isSidebarOpen ? 'opacity-0 pointer-events-none' : 'opacity-100'}
+          ${theme === 'dark' ? 'bg-gray-700 text-gray-100' : 'bg-white text-gray-900'}
+        `}>
+          <h1 className="text-4xl font-extrabold mb-4 animate-bounce">
+            E2S PCB PRO
+          </h1>
+          <p className="text-lg mb-6">
+            Advanced PCB management for your safety systems<br/>
+            Worldwide availability - global approvals - 10 year warranty
+          </p>
+          {/* Image Box */}
+          <div className={`mb-6 border-2 rounded-lg p-2 flex justify-center items-center h-48 overflow-hidden
+            ${theme === 'dark' ? 'border-gray-600 bg-gray-800' : 'border-gray-300 bg-gray-100'}
+          `}>
+            <img
+              src={homepageImage || "https://placehold.co/400x200/cccccc/333333?text=E2S+Logo"}
+              alt="E2S Logo"
+              className="max-w-full max-h-full object-contain rounded-lg shadow-md"
+            />
+          </div>
+          <button
+            className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-6 rounded-lg shadow-lg
+                       transform transition duration-300 hover:scale-105 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-50"
+            onClick={() => navigateTo('search')} // Changed to navigateTo('search')
+          >
+            Search PCB
+          </button>
+        </div>
+      )}
+
+      {currentPage === 'addPcb' && (
+        <div className={`p-8 rounded-xl shadow-2xl text-left w-full max-w-md mx-auto z-10 transition-opacity duration-300
+          ${isSidebarOpen ? 'opacity-0 pointer-events-none' : 'opacity-100'}
+          ${theme === 'dark' ? 'bg-gray-700 text-gray-100' : 'bg-white text-gray-900'}
+        `}>
+          <h2 className="text-3xl font-bold mb-6 text-center">Add New PCB</h2>
+
+          {/* Image Preview Box */}
+          <div className={`mb-6 border-2 rounded-lg p-2 flex flex-wrap justify-center items-center h-48 overflow-y-auto
+            ${theme === 'dark' ? 'border-gray-600 bg-gray-800' : 'border-gray-300 bg-gray-100'}
+          `}>
+            {pcbImages.length > 0 ? (
+              pcbImages.map((imageSrc, index) => (
+                <img
+                  key={index}
+                  src={imageSrc}
+                  alt={`PCB Preview ${index + 1}`}
+                  className="w-20 h-20 object-contain rounded-md m-1 shadow-sm"
+                />
+              ))
+            ) : (
+              <img
+                src="https://placehold.co/400x200/cccccc/333333?text=No+Image+Selected"
+                alt="PCB Preview"
+                className="max-w-full max-h-full object-contain rounded-lg shadow-md"
+              />
+            )}
+          </div>
+
+          {/* PCB Name Section */}
+          <div className="mb-4">
+            <label htmlFor="pcbNameInput" className={`block text-sm font-bold mb-2 ${theme === 'dark' ? 'text-gray-100' : 'text-gray-700'}`}>PCB Name:</label>
+            <input
+              type="text"
+              id="pcbNameInput"
+              className={`shadow appearance-none border rounded-lg w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline focus:ring-2
+                ${theme === 'dark' ? 'bg-gray-800 text-gray-100 border-gray-600 focus:ring-blue-300' : 'bg-white text-gray-700 border-gray-300 focus:ring-blue-500'}
+              `}
+              placeholder="Enter PCB name"
+              value={pcbName}
+              onChange={(e) => setPcbName(e.target.value)}
+            />
+          </div>
+
+          {/* Take Photos (Camera) Section */}
+          <div className="mb-4">
+            <label htmlFor="cameraInput" className={`block text-sm font-bold mb-2 ${theme === 'dark' ? 'text-gray-100' : 'text-gray-700'}`}>Take Photo (Camera):</label>
+            <input
+              type="file"
+              id="cameraInput"
+              accept="image/*"
+              capture="camera"
+              multiple // Allow multiple files
+              className={`block w-full text-sm border rounded-lg cursor-pointer p-2 focus:outline-none focus:ring-2
+                ${theme === 'dark' ? 'bg-gray-800 text-gray-100 border-gray-600 focus:ring-blue-300' : 'bg-gray-50 text-gray-900 border-gray-300 focus:ring-blue-500'}
+              `}
+              onChange={handleImageChange}
+              ref={cameraInputRef} // Attach ref
+            />
+          </div>
+
+          {/* Select from Gallery Section */}
+          <div className="mb-4">
+            <label htmlFor="galleryInput" className={`block text-sm font-bold mb-2 ${theme === 'dark' ? 'text-gray-100' : 'text-gray-700'}`}>Select from Gallery:</label>
+            <input
+              type="file"
+              id="galleryInput"
+              accept="image/*"
+              multiple // Allow multiple files
+              className={`block w-full text-sm border rounded-lg cursor-pointer p-2 focus:outline-none focus:ring-2
+                ${theme === 'dark' ? 'bg-gray-800 text-gray-100 border-gray-600 focus:ring-blue-300' : 'bg-gray-50 text-gray-900 border-gray-300 focus:ring-blue-500'}
+              `}
+              onChange={handleImageChange}
+              ref={galleryInputRef} // Attach ref
+            />
+          </div>
+
+          {/* Used By Family Section */}
+          <div className="mb-4">
+            <label htmlFor="usedByFamilyInput" className={`block text-sm font-bold mb-2 ${theme === 'dark' ? 'text-gray-100' : 'text-gray-700'}`}>Used By Family:</label>
+            <input
+              type="text"
+              id="usedByFamilyInput"
+              className={`shadow appearance-none border rounded-lg w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline focus:ring-2
+                ${theme === 'dark' ? 'bg-gray-800 text-gray-100 border-gray-600 focus:ring-blue-300' : 'bg-white text-gray-700 border-gray-300 focus:ring-blue-500'}
+              `}
+              placeholder="e.g., D1x, BEx, GNEx"
+              value={usedByFamily}
+              onChange={(e) => setUsedByFamily(e.target.value)}
+            />
+          </div>
+
+          {/* Description Section */}
+          <div className="mb-6">
+            <label htmlFor="descriptionInput" className={`block text-sm font-bold mb-2 ${theme === 'dark' ? 'text-gray-100' : 'text-gray-700'}`}>Description:</label>
+            <textarea
+              id="descriptionInput"
+              rows="4"
+              className={`shadow appearance-none border rounded-lg w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline resize-none focus:ring-2
+                ${theme === 'dark' ? 'bg-gray-800 text-gray-100 border-gray-600 focus:ring-blue-300' : 'bg-white text-gray-700 border-gray-300 focus:ring-blue-500'}
+              `}
+              placeholder="Add description for the PCB"
+              value={pcbDescription}
+              onChange={(e) => setPcbDescription(e.target.value)}
+            ></textarea>
+          </div>
+
+          {/* Add PCB & Description Button */}
+          <button
+            className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-6 rounded-lg shadow-lg
+                       transform transition duration-300 hover:scale-105 w-full focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-50"
+            onClick={handleAddPcb}
+          >
+            Add PCB & Description
+          </button>
+        </div>
+      )}
+
+      {currentPage === 'search' && (
+        <div className={`p-8 rounded-xl shadow-2xl text-left w-full max-w-md mx-auto z-10 transition-opacity duration-300
+          ${isSidebarOpen ? 'opacity-0 pointer-events-none' : 'opacity-100'}
+          ${theme === 'dark' ? 'bg-gray-700 text-gray-100' : 'bg-white text-gray-900'}
+        `}>
+          <h2 className="text-3xl font-bold mb-6 text-center">Search PCBs</h2>
+
+          {/* Search Text Box */}
+          <div className="mb-6">
+            <label htmlFor="searchQueryInput" className={`block text-sm font-bold mb-2 ${theme === 'dark' ? 'text-gray-100' : 'text-gray-700'}`}>Search Query:</label>
+            <input
+              type="text"
+              id="searchQueryInput"
+              className={`shadow appearance-none border rounded-lg w-full py-2 px-3 leading-tight focus:outline-none focus:shadow-outline focus:ring-2
+                ${theme === 'dark' ? 'bg-gray-800 text-gray-100 border-gray-600 focus:ring-blue-300' : 'bg-white text-gray-700 border-gray-300 focus:ring-blue-500'}
+              `}
+              placeholder="Enter PCB name or description to search"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+            />
+          </div>
+
+          {/* Search Button */}
+          <button
+            className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-6 rounded-lg shadow-lg
+                       transform transition duration-300 hover:scale-105 w-full focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-50"
+            onClick={handleSearch}
+          >
+            Search
+          </button>
+
+          {/* Placeholder for search results */}
+          <div className="mt-8 text-center">
+            <h3 className={`text-xl font-semibold mb-4 ${theme === 'dark' ? 'text-gray-100' : 'text-gray-800'}`}>Search Results:</h3>
+            <p className={`${theme === 'dark' ? 'text-gray-400' : 'text-gray-500'}`}>Results will appear here after search.</p>
+          </div>
+        </div>
+      )}
+
+      {currentPage === 'database' && (
+        <div className={`p-8 rounded-xl shadow-2xl text-center w-full max-w-4xl mx-auto z-10 transition-opacity duration-300
+          ${isSidebarOpen ? 'opacity-0 pointer-events-none' : 'opacity-100'}
+          ${theme === 'dark' ? 'bg-gray-700 text-gray-100' : 'bg-white text-gray-900'}
+        `}>
+          <h2 className="text-3xl font-bold mb-6 text-center">PCB DATABASE</h2>
+
+          <div className="flex flex-col sm:flex-row justify-center gap-4 mb-8">
+            <button
+              className="bg-green-600 hover:bg-green-700 text-white font-bold py-3 px-6 rounded-lg shadow-lg
+                         transform transition duration-300 hover:scale-105 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-opacity-50"
+              onClick={generateCsvReport}
+            >
+              Export Database to CSV
+            </button>
+            <button
+              className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-6 rounded-lg shadow-lg
+                         transform transition duration-300 hover:scale-105 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-50"
+              onClick={() => generatePdfReport(false)}
+            >
+              Create PDF Report
+            </button>
+            <button
+              className="bg-purple-600 hover:bg-purple-700 text-white font-bold py-3 px-6 rounded-lg shadow-lg
+                         transform transition duration-300 hover:scale-105 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-opacity-50"
+              onClick={() => generatePdfReport(true)}
+            >
+              Email Report
+            </button>
+          </div>
+
+          <h3 className={`text-2xl font-bold mb-4 ${theme === 'dark' ? 'text-gray-100' : 'text-gray-900'}`}>Current PCB Inventory</h3>
+          {pcbs.length === 0 ? (
+            <p className={`${theme === 'dark' ? 'text-gray-400' : 'text-gray-500'}`}>No PCBs added yet.</p>
+          ) : (
+            <div className={`overflow-x-auto rounded-lg shadow-md ${theme === 'dark' ? 'bg-gray-800' : 'bg-white'}`}>
+              <table className="min-w-full">
+                <thead><tr>
+                    <th className="py-3 px-6 text-left">Image(s)</th> {/* Updated header */}
+                    <th className="py-3 px-6 text-left">PCB Name</th>
+                    <th className="py-3 px-6 text-left">Description</th>
+                    <th className="py-3 px-6 text-left">Used By Family</th>
+                  </tr></thead>
+                <tbody>
+                  {pcbs.map((pcb) => (
+                    <tr key={pcb.id} className={`border-b ${theme === 'dark' ? 'border-gray-600' : 'border-gray-200'} ${theme === 'dark' ? 'hover:bg-gray-600' : 'hover:bg-gray-100'}`}>
+                      <td className="py-3 px-6 text-left">
+                        <div className="flex flex-wrap gap-1">
+                          {pcb.images && pcb.images.length > 0 ? (
+                            pcb.images.map((imgSrc, idx) => (
+                              <img key={idx} src={imgSrc} alt={`${pcb.name} ${idx + 1}`} className="w-12 h-12 object-cover rounded-md" />
+                            ))
+                          ) : (
+                            <span className={`${theme === 'dark' ? 'text-gray-400' : 'text-gray-500'}`}>No Image</span>
+                          )}
+                        </div>
+                      </td>
+                      <td className="py-3 px-6 text-left">{pcb.name}</td>
+                      <td className="py-3 px-6 text-left">{pcb.description}</td>
+                      <td className="py-3 px-6 text-left">{pcb.usedByFamily}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
+
+      {currentPage === 'scanCompare' && (
+        <div className={`p-8 rounded-xl shadow-2xl text-left w-full max-w-md mx-auto z-10 transition-opacity duration-300
+          ${isSidebarOpen ? 'opacity-0 pointer-events-none' : 'opacity-100'}
+          ${theme === 'dark' ? 'bg-gray-700 text-gray-100' : 'bg-white text-gray-900'}
+        `}>
+          <h2 className="text-3xl font-bold mb-6 text-center">Scan / Compare PCBs</h2>
+
+          {/* Image Holder */}
+          <div className={`mb-6 border-2 rounded-lg p-2 flex justify-center items-center h-48 overflow-hidden
+            ${theme === 'dark' ? 'border-gray-600 bg-gray-800' : 'border-gray-300 bg-gray-100'}
+          `}>
+            <img
+              src={scanCompareImage || "https://placehold.co/400x200/cccccc/333333?text=Upload+Image+for+Comparison"}
+              alt="PCB for Comparison"
+              className="max-w-full max-h-full object-contain rounded-lg shadow-md"
+            />
+          </div>
+
+          {/* Choose File from Local Storage */}
+          <div className="mb-6">
+            <label htmlFor="scanCompareInput" className={`block text-sm font-bold mb-2 ${theme === 'dark' ? 'text-gray-100' : 'text-gray-700'}`}>Choose Image File:</label>
+            <input
+              type="file"
+              id="scanCompareInput"
+              accept="image/*"
+              className={`block w-full text-sm border rounded-lg cursor-pointer p-2 focus:outline-none focus:ring-2
+                ${theme === 'dark' ? 'bg-gray-800 text-gray-100 border-gray-600 focus:ring-blue-300' : 'bg-gray-50 text-gray-900 border-gray-300 focus:ring-blue-500'}
+              `}
+              onChange={handleScanCompareImageChange}
+              ref={scanCompareInputRef} // Attach ref
+            />
+          </div>
+
+          {/* Compare PCB Image with Database Button */}
+          <button
+            className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-6 rounded-lg shadow-lg
+                       transform transition duration-300 hover:scale-105 w-full focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-50"
+            onClick={handleComparePcbImage}
+          >
+            Compare PCB Image with Database
+          </button>
+
+          {/* Comparison Results Display Area */}
+          <div className={`mt-8 p-4 rounded-lg shadow-inner text-left
+            ${theme === 'dark' ? 'bg-gray-800 text-gray-100' : 'bg-gray-50 text-gray-700'}
+          `}>
+            {comparisonResults ? (
+              <div dangerouslySetInnerHTML={{ __html: comparisonResults }} />
+            ) : (
+              <p className={`${theme === 'dark' ? 'text-gray-400' : 'text-gray-500'} text-center`}>Comparison results will appear here.</p>
+            )}
+          </div>
+        </div>
+      )}
+
+      {currentPage === 'settings' && (
+        <div className={`p-8 rounded-xl shadow-2xl text-center w-full max-w-sm mx-auto z-10 transition-opacity duration-300
+          ${isSidebarOpen ? 'opacity-0 pointer-events-none' : 'opacity-100'}
+          ${theme === 'dark' ? 'bg-gray-700 text-gray-100' : 'bg-white text-gray-900'}
+        `}>
+          <h2 className="text-3xl font-bold mb-6">Settings Section</h2>
+          
+          {/* Theme Settings Section */}
+          <div className={`mb-6 p-4 rounded-lg shadow-md
+            ${theme === 'dark' ? 'bg-gray-800 border border-gray-600' : 'bg-gray-100 border border-gray-300'}
+          `}>
+            <h3 className={`text-xl font-semibold mb-4 ${theme === 'dark' ? 'text-gray-100' : 'text-gray-800'}`}>Theme Settings</h3>
+            <div className="flex justify-center gap-4">
+              <label className={`inline-flex items-center cursor-pointer ${theme === 'dark' ? 'text-gray-100' : 'text-gray-700'}`}>
+                <input
+                  type="radio"
+                  className="form-radio h-5 w-5 text-blue-600"
+                  name="theme"
+                  value="light"
+                  checked={theme === 'light'}
+                  onChange={() => setTheme('light')}
+                />
+                <span className="ml-2">Light Mode</span>
+              </label>
+              <label className={`inline-flex items-center cursor-pointer ${theme === 'dark' ? 'text-gray-100' : 'text-gray-700'}`}>
+                <input
+                  type="radio"
+                  className="form-radio h-5 w-5 text-blue-600"
+                  name="theme"
+                  value="dark"
+                  checked={theme === 'dark'}
+                  onChange={() => setTheme('dark')}
+                />
+                <span className="ml-2">Dark Mode</span>
+              </label>
+            </div>
+          </div>
+
+          {/* Homepage Image Section */}
+          <div className={`mb-6 p-4 rounded-lg shadow-md
+            ${theme === 'dark' ? 'bg-gray-800 border border-gray-600' : 'bg-gray-100 border border-gray-300'}
+          `}>
+            <h3 className={`text-xl font-semibold mb-4 ${theme === 'dark' ? 'text-gray-100' : 'text-gray-800'}`}>Homepage Image</h3>
+            
+            {/* Image Holder for Preview */}
+            <div className={`mb-4 border-2 rounded-lg p-2 flex justify-center items-center h-40 overflow-hidden
+              ${theme === 'dark' ? 'border-gray-600 bg-gray-900' : 'border-gray-300 bg-white'}
+            `}>
+              <img
+                src={tempHomepageImage || homepageImage || "https://placehold.co/300x150/cccccc/333333?text=Homepage+Preview"}
+                alt="Homepage Preview"
+                className="max-w-full max-h-full object-contain rounded-lg shadow-md"
+              />
+            </div>
+
+            {/* Choose File Input */}
+            <div className="mb-4">
+              <label htmlFor="homepageImageInput" className={`block text-sm font-bold mb-2 ${theme === 'dark' ? 'text-gray-100' : 'text-gray-700'}`}>Choose Image File:</label>
+              <input
+                type="file"
+                id="homepageImageInput"
+                accept="image/*"
+                className={`block w-full text-sm border rounded-lg cursor-pointer p-2 focus:outline-none focus:ring-2
+                  ${theme === 'dark' ? 'bg-gray-900 text-gray-100 border-gray-600 focus:ring-blue-300' : 'bg-gray-50 text-gray-900 border-gray-300 focus:ring-blue-500'}
+                `}
+                onChange={handleHomepageImageSelect}
+                ref={homepageImageInputRef}
+              />
+            </div>
+
+            {/* Set Homepage Image Button */}
+            <button
+              className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-6 rounded-lg shadow-lg
+                         transform transition duration-300 hover:scale-105 w-full focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-50"
+              onClick={handleSetHomepageImage}
+            >
+              Set Homepage Image
+            </button>
+
+            {/* Status Message Display */}
+            {statusMessage.message && (
+              <div className={`mt-4 p-3 rounded-lg text-sm font-semibold
+                ${statusMessage.type === 'success' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}
+                ${theme === 'dark' && statusMessage.type === 'success' ? 'dark:bg-green-800 dark:text-green-100' : ''}
+                ${theme === 'dark' && statusMessage.type === 'error' ? 'dark:bg-red-800 dark:text-red-100' : ''}
+              `}>
+                {statusMessage.message}
+              </div>
+            )}
+          </div>
+
+          {/* Data Management Section */}
+          <div className={`mb-6 p-4 rounded-lg shadow-md
+            ${theme === 'dark' ? 'bg-gray-800 border border-gray-600' : 'bg-gray-100 border border-gray-300'}
+          `}>
+            <h3 className={`text-xl font-semibold mb-4 ${theme === 'dark' ? 'text-gray-100' : 'text-gray-800'}`}>Data Management</h3>
+            
+            {/* Export Database */}
+            <button
+              className="bg-green-600 hover:bg-green-700 text-white font-bold py-3 px-6 rounded-lg shadow-lg
+                         transform transition duration-300 hover:scale-105 w-full mb-4 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-opacity-50"
+              onClick={generateCsvReport}
+            >
+              Export Database to CSV
+            </button>
+
+            {/* Import Database */}
+            <div className="mb-4">
+              <label htmlFor="importFileInput" className={`block text-sm font-bold mb-2 ${theme === 'dark' ? 'text-gray-100' : 'text-gray-700'}`}>Import Database from CSV:</label>
+              <input
+                type="file"
+                id="importFileInput"
+                accept=".csv"
+                className={`block w-full text-sm border rounded-lg cursor-pointer p-2 focus:outline-none focus:ring-2
+                  ${theme === 'dark' ? 'bg-gray-900 text-gray-100 border-gray-600 focus:ring-blue-300' : 'bg-gray-50 text-gray-900 border-gray-300 focus:ring-blue-500'}
+                `}
+                onChange={handleImportFileChange}
+                ref={importFileInputRef}
+              />
+            </div>
+            <button
+              className="bg-purple-600 hover:bg-purple-700 text-white font-bold py-3 px-6 rounded-lg shadow-lg
+                         transform transition duration-300 hover:scale-105 w-full focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-opacity-50"
+              onClick={handleImportDatabase}
+            >
+              Import Data
+            </button>
+
+            {/* Import Status Message Display */}
+            {importMessage.message && (
+              <div className={`mt-4 p-3 rounded-lg text-sm font-semibold
+                ${importMessage.type === 'success' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}
+                ${theme === 'dark' && importMessage.type === 'success' ? 'dark:bg-green-800 dark:text-green-100' : ''}
+                ${theme === 'dark' && importMessage.type === 'error' ? 'dark:bg-red-800 dark:text-red-100' : ''}
+                ${theme === 'dark' && importMessage.type === 'info' ? 'dark:bg-blue-800 dark:text-blue-100' : ''}
+              `}>
+                {importMessage.message}
+              </div>
+            )}
+          </div>
+
+          {/* Delete Database Section */}
+          <div className={`mb-6 p-4 rounded-lg shadow-md
+            ${theme === 'dark' ? 'bg-gray-800 border border-gray-600' : 'bg-gray-100 border border-gray-300'}
+          `}>
+            <h3 className={`text-xl font-semibold mb-4 ${theme === 'dark' ? 'text-gray-100' : 'text-gray-800'}`}>Delete Database</h3>
+            
+            {!showDeleteConfirmation ? (
+              <button
+                className="bg-red-600 hover:bg-red-700 text-white font-bold py-3 px-6 rounded-lg shadow-lg
+                           transform transition duration-300 hover:scale-105 w-full focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-opacity-50"
+                onClick={handleDeleteDatabasePrompt}
+              >
+                Delete All Data
+              </button>
+            ) : (
+              <div className="flex flex-col items-center">
+                <p className={`mb-4 text-sm font-medium ${theme === 'dark' ? 'text-red-300' : 'text-red-700'}`}>
+                  {deleteMessage.message}
+                </p>
+                <button
+                  className="bg-red-800 hover:bg-red-900 text-white font-bold py-3 px-6 rounded-lg shadow-lg
+                             transform transition duration-300 hover:scale-105 w-full focus:outline-none focus:ring-2 focus:ring-red-700 focus:ring-opacity-50"
+                  onClick={confirmDeleteDatabase}
+                >
+                  Confirm Delete Database
+                </button>
+                <button
+                  className="mt-2 bg-gray-500 hover:bg-gray-600 text-white font-bold py-2 px-4 rounded-lg shadow-md
+                             transform transition duration-300 hover:scale-105 w-full focus:outline-none focus:ring-2 focus:ring-gray-400 focus:ring-opacity-50"
+                  onClick={() => setShowDeleteConfirmation(false)}
+                >
+                  Cancel
+                </button>
+              </div>
+            )}
+
+            {/* Delete Status Message Display */}
+            {deleteMessage.message && !showDeleteConfirmation && (
+              <div className={`mt-4 p-3 rounded-lg text-sm font-semibold
+                ${deleteMessage.type === 'success' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}
+                ${theme === 'dark' && deleteMessage.type === 'success' ? 'dark:bg-green-800 dark:text-green-100' : ''}
+                ${theme === 'dark' && deleteMessage.type === 'error' ? 'dark:bg-red-800 dark:text-red-100' : ''}
+              `}>
+                {deleteMessage.message}
+              </div>
+            )}
+          </div>
+
+          <p className={`${theme === 'dark' ? 'text-gray-400' : 'text-gray-700'} mt-4`}>Other application settings will go here.</p>
+        </div>
+      )}
+
+      {currentPage === 'appCreator' && (
+        <div className={`p-8 rounded-xl shadow-2xl text-center max-w-sm w-full z-10 transition-opacity duration-300
+          ${isSidebarOpen ? 'opacity-0 pointer-events-none' : 'opacity-100'}
+          ${theme === 'dark' ? 'bg-gray-700 text-gray-100' : 'bg-white text-gray-900'}
+        `}>
+          <h2 className="text-3xl font-bold mb-6">App Creator Section</h2>
+          <p className={`${theme === 'dark' ? 'text-gray-400' : 'text-gray-700'} mt-4`}>
+            This app is created by <span className="text-xl font-bold transition-transform duration-300 hover:scale-105 inline-block">Joel Menezes</span>
+          </p>
+        </div>
+      )}
+
+      {currentPage === 'aboutUs' && (
+        <div className={`p-8 rounded-xl shadow-2xl text-left w-full max-w-md mx-auto z-10 transition-opacity duration-300
+          ${isSidebarOpen ? 'opacity-0 pointer-events-none' : 'opacity-100'}
+          ${theme === 'dark' ? 'bg-gray-700 text-gray-100' : 'bg-white text-gray-900'}
+        `}>
+          <h2 className="text-3xl font-bold mb-6 text-center">E2S Warning Signals</h2>
+          
+          {/* About Us Section */}
+          <div className={`mb-4 p-4 rounded-lg shadow-md cursor-pointer
+            ${theme === 'dark' ? 'bg-gray-800 border border-gray-600' : 'bg-gray-100 border border-gray-300'}
+          `} onClick={() => setAboutUsExpanded(!aboutUsExpanded)}>
+            <div className="flex justify-between items-center">
+              <h3 className={`text-xl font-semibold ${theme === 'dark' ? 'text-gray-100' : 'text-gray-800'}`}>About Us</h3>
+              <svg className={`w-6 h-6 transform transition-transform duration-300 ${aboutUsExpanded ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7"></path>
+              </svg>
+            </div>
+            <div className={`overflow-hidden transition-all duration-500 ease-in-out ${aboutUsExpanded ? 'max-h-96 opacity-100 mt-2' : 'max-h-0 opacity-0'}`}>
+              <p className={`${theme === 'dark' ? 'text-gray-300' : 'text-gray-700'}`}>
+                E2S is the world’s leading independent signalling manufacturer. We specialise in the design, development and manufacture of high performance audible and visual signals for commercial, industrial, marine and hazardous locations with over 30 years of expertise. Our head office and manufacturing operations are located in London, UK with extensive facilities for design, manufacture, quality assurance, testing and dispatch along with a customer service centre serving global markets. Additionally, a dedicated distribution hub and sales operation is based in Houston, Texas principally serving North and South American customers as well as supporting projects globally. An international network of distribution partners and system integrators ensure worldwide product availability and local technical support.
+              </p>
+            </div>
+          </div>
+
+          {/* Serving your sector Section */}
+          <div className={`mb-4 p-4 rounded-lg shadow-md cursor-pointer
+            ${theme === 'dark' ? 'bg-gray-800 border border-gray-600' : 'bg-gray-100 border border-gray-300'}
+          `} onClick={() => setServingSectorExpanded(!servingSectorExpanded)}>
+            <div className="flex justify-between items-center">
+              <h3 className={`text-xl font-semibold ${theme === 'dark' ? 'text-gray-100' : 'text-gray-800'}`}>Serving your sector</h3>
+              <svg className={`w-6 h-6 transform transition-transform duration-300 ${servingSectorExpanded ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7"></path>
+              </svg>
+            </div>
+            <div className={`overflow-hidden transition-all duration-500 ease-in-out ${servingSectorExpanded ? 'max-h-96 opacity-100 mt-2' : 'max-h-0 opacity-0'}`}>
+              <p className={`${theme === 'dark' ? 'text-gray-300' : 'text-gray-700'}`}>
+                We believe that technical excellence can be achieved through sharing best practice and understanding the requirements of each sector. Our products have proven performance and we can offer standard and bespoke solutions to diverse applications combined with dedicated expert advice. Our signalling equipment can be utilized in a vast range of sectors and applications including: Energy: on and off shore extraction and processing & storage Mining: surface & sub-surface Marine: on board and land based infrastructure Chemical: manufacturing & storage Transportation: rail & material handling General industrial: process control and safety Should you have a specific query about product applications, please contact us with your requirements.
+              </p>
+            </div>
+          </div>
+
+          {/* Product Development Section */}
+          <div className={`mb-4 p-4 rounded-lg shadow-md cursor-pointer
+            ${theme === 'dark' ? 'bg-gray-800 border border-gray-600' : 'bg-gray-100 border border-gray-300'}
+          `} onClick={() => setProductDevelopmentExpanded(!productDevelopmentExpanded)}>
+            <div className="flex justify-between items-center">
+              <h3 className={`text-xl font-semibold ${theme === 'dark' ? 'text-gray-100' : 'text-gray-800'}`}>Product Development</h3>
+              <svg className={`w-6 h-6 transform transition-transform duration-300 ${productDevelopmentExpanded ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7"></path>
+              </svg>
+            </div>
+            <div className={`overflow-hidden transition-all duration-500 ease-in-out ${productDevelopmentExpanded ? 'max-h-full opacity-100 mt-2' : 'max-h-0 opacity-0'}`}>
+              <p className={`${theme === 'dark' ? 'text-gray-300' : 'text-gray-700'}`}>
+                We are committed to collaborative research and product development. Underpinning our product development strategy is a close collaboration with our customers ensuring we create effective and functional products to meet your needs and those of ever changing markets.
+                <br/><br/>
+                Working together with system integrators, engineers, specifiers and clients we have developed product solutions to precise requirements with substantiated benefits such as ease of interface, installation, programming and overall performance that all our customers can benefit from every day.
+                <br/><br/>
+                Additionally, we have a long history of manufacturing products to specific requirements including alarm tone frequencies, tone patterns, stage configurations and housing colours. Please contact us with your requirements today.
+              </p>
+              <p className={`${theme === 'dark' ? 'text-gray-300' : 'text-gray-700'} font-bold mt-4`}>Hazardous Area</p>
+              <p className={`${theme === 'dark' ? 'text-gray-300' : 'text-gray-700'}`}>Browse by type:</p>
+              <ul className="list-disc list-inside ml-4 mt-2">
+                <li className={`${theme === 'dark' ? 'text-gray-300' : 'text-gray-700'}`}>Visual</li>
+                <li className={`${theme === 'dark' ? 'text-gray-300' : 'text-gray-700'}`}>Audible</li>
+                <li className={`${theme === 'dark' ? 'text-gray-300' : 'text-gray-700'}`}>Combination</li>
+                <li className={`${theme === 'dark' ? 'text-gray-300' : 'text-gray-700'}`}>Alarm Bars</li>
+                <li className={`${theme === 'dark' ? 'text-gray-300' : 'text-gray-700'}`}>Status Lamps</li>
+                <li className={`${theme === 'dark' ? 'text-gray-300' : 'text-gray-700'}`}>Manual Call Points</li>
+                <li className={`${theme === 'dark' ? 'text-gray-300' : 'text-gray-700'}`}>Junction Boxes</li>
+                <li className={`${theme === 'dark' ? 'text-gray-300' : 'text-gray-700'}`}>Detectors</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+export default App;
